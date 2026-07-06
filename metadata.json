@@ -1,0 +1,6 @@
+{
+  "name": "Framez.my",
+  "description": "Premium interactive photobooth dashboard for Framez.my: packages, live booking calendar, custom pricing calculator, state-wise transport verification, Google Drive client gallery review-lock, real-time AI-assisted WhatsApp CRM, and hardware/crew tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
