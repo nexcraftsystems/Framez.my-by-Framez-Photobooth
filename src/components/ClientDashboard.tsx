@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { PACKAGES, ADDONS, STATES_MAP } from "../data";
 import { Package, AddOn, Booking, ChatMessage, Role } from "../types";
+import PrintableReceipt from "./PrintableReceipt";
 import {
   Calendar as CalendarIcon,
   Sparkles,
@@ -24,7 +25,9 @@ import {
   AlertCircle,
   PlusCircle,
   FolderLock,
-  Check
+  Check,
+  DollarSign,
+  X
 } from "lucide-react";
 
 interface ClientDashboardProps {
@@ -33,6 +36,7 @@ interface ClientDashboardProps {
   bookingsList: Booking[];
   role: Role;
   onAddAuditLog?: (actor: string, action: string, severity: "info" | "warning" | "alert") => void;
+  onUpdateBooking?: (booking: Booking) => void;
 }
 
 export default function ClientDashboard({
@@ -40,7 +44,8 @@ export default function ClientDashboard({
   onNewBooking,
   bookingsList,
   role = "CLIENT",
-  onAddAuditLog
+  onAddAuditLog,
+  onUpdateBooking
 }: ClientDashboardProps) {
   // Filter bookings belonging to this client email (case insensitive)
   const clientBookings = bookingsList.filter(
@@ -55,10 +60,10 @@ export default function ClientDashboard({
   const [isCreatingNewBooking, setIsCreatingNewBooking] = useState(clientBookings.length === 0);
 
   // Sidebar Tab selection inside the active booking detail
-  const [activeTab, setActiveTab] = useState<"calendar" | "choose_plan" | "calculator" | "address" | "unlock" | "chat">("calendar");
+  const [activeTab, setActiveTab] = useState<"calendar" | "choose_plan" | "calculator" | "address" | "unlock" | "chat" | "receipts" | "second_payment">("calendar");
 
   // Sidebar collapse state
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Booking details configuration state (FOR NEW RESERVATIONS)
   const [selectedPkg, setSelectedPkg] = useState<Package>(PACKAGES[1]); // Platinum default
@@ -468,7 +473,16 @@ export default function ClientDashboard({
               icon: activeBooking?.status === "BOOKED" ? Unlock : Lock,
               badge: activeBooking?.status === "BOOKED" ? "UNLOCKED" : "LOCKED"
             },
-            { id: "chat", label: "Founder Live Chat", icon: MessageSquare, badge: "WhatsApp" }
+            { id: "receipts", label: "Receipt Invoices", icon: FileText, badge: activeBooking ? (activeBooking.status === "BOOKED" ? "PAID" : "PREBOOKED") : "PREVIEW" },
+            { id: "chat", label: "Founder Live Chat", icon: MessageSquare, badge: "WhatsApp" },
+            ...(activeBooking && activeBooking.paymentType === "Booking Fees" ? [
+              {
+                id: "second_payment",
+                label: "2nd Payment",
+                icon: DollarSign,
+                badge: activeBooking.secondPaymentApproved ? "APPROVED" : (activeBooking.secondReceiptUrl ? "AWAITING" : "DUE 2 DAYS")
+              }
+            ] : [])
           ].map((tab) => {
             const isSelected = activeTab === tab.id;
             return (
@@ -1088,6 +1102,246 @@ export default function ClientDashboard({
                   <Send className="w-4 h-4" />
                 </button>
               </form>
+            </div>
+          )}
+
+          {activeTab === "receipts" && (
+            activeBooking ? (
+              <PrintableReceipt booking={activeBooking} />
+            ) : (
+              <div className="glass-card rounded-[2rem] p-8 border-white/10 bg-neutral-900/60 backdrop-blur-xl text-center space-y-4">
+                <AlertCircle className="w-12 h-12 text-amber-500 mx-auto animate-bounce" />
+                <h3 className="text-base font-bold text-white uppercase tracking-wider">
+                  No Active Booking Found
+                </h3>
+                <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                  Please select or configure a live booking package from your portfolio list first to render its premium receipt.
+                </p>
+              </div>
+            )
+          )}
+
+          {activeTab === "second_payment" && activeBooking && (
+            <div className="glass-card rounded-[2rem] p-6 border-white/10 bg-neutral-900/60 backdrop-blur-xl space-y-6">
+              <div>
+                <h3 className="text-lg font-bold font-display uppercase tracking-wider text-white flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-[#a1c398]" />
+                  <span>2nd & Final Payment Workspace</span>
+                </h3>
+                <p className="text-xs text-gray-400 mt-1 font-light">
+                  Required to be finalized 2 days prior to your event. Upload bank transaction receipts for validation.
+                </p>
+              </div>
+
+              {/* Status and Balance Card */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-5 bg-neutral-950/40 border border-white/5 rounded-2xl space-y-2">
+                  <span className="text-[10px] text-gray-500 font-mono uppercase block">Financial Statement</span>
+                  <div className="flex justify-between items-center text-xs text-gray-400 border-b border-white/5 pb-2">
+                    <span>Full Package Value:</span>
+                    <span className="font-mono text-white">RM {activeBooking.totalPrice.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-400 border-b border-white/5 pb-2">
+                    <span>1st Booking Fee (Paid):</span>
+                    <span className="font-mono text-emerald-400 font-bold">- RM 150.00</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1">
+                    <span className="text-xs font-bold text-white uppercase">Remaining Balance Due:</span>
+                    <span className="font-mono text-[#a1c398] text-sm font-extrabold">
+                      RM {(activeBooking.totalPrice - 150).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5 bg-neutral-950/40 border border-white/5 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-mono uppercase block">Payment Milestone Status</span>
+                    <div className="mt-2.5 flex items-center gap-2">
+                      {activeBooking.secondPaymentApproved ? (
+                        <span className="px-3 py-1 bg-emerald-950 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-bold font-mono uppercase flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5" /> Approved & Cleared
+                        </span>
+                      ) : activeBooking.secondReceiptUrl ? (
+                        <span className="px-3 py-1 bg-amber-950 text-amber-400 border border-amber-500/20 rounded-full text-[10px] font-bold font-mono uppercase flex items-center gap-1.5 animate-pulse">
+                          <Clock className="w-3.5 h-3.5" /> Pending Verification
+                        </span>
+                      ) : activeBooking.secondPaymentRejected ? (
+                        <span className="px-3 py-1 bg-red-950 text-red-400 border border-red-500/20 rounded-full text-[10px] font-bold font-mono uppercase flex items-center gap-1.5">
+                          <X className="w-3.5 h-3.5" /> Receipt Rejected
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 bg-neutral-900 text-gray-400 border border-white/10 rounded-full text-[10px] font-bold font-mono uppercase">
+                          Payment Required
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-gray-400 font-sans mt-2">
+                    Event Date: <strong>{activeBooking.date}</strong><br />
+                    Payment Due Date: <strong className="text-amber-400">
+                      {(() => {
+                        const d = new Date(activeBooking.date);
+                        d.setDate(d.getDate() - 2);
+                        return d.toISOString().split("T")[0];
+                      })()} (2 days before)
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Content Split: Bank Instructions vs Upload */}
+              {activeBooking.secondPaymentApproved ? (
+                <div className="p-8 bg-emerald-950/20 border border-emerald-500/20 rounded-3xl text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto text-xl font-bold">✓</div>
+                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">🎉 2nd Payment Approved & Settled!</h4>
+                  <p className="text-xs text-gray-300 font-light max-w-md mx-auto leading-relaxed">
+                    Thank you so much! Irfan and Irsalina have verified your final bank payment. Your entire photobooth experience is fully paid and locked. We are excited to make your event on <strong>{activeBooking.date}</strong> absolutely amazing!
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+                  
+                  {/* Left: Bank Transfer Coordinates */}
+                  <div className="lg:col-span-5 space-y-4">
+                    <span className="text-[10px] text-[#a1c398] font-bold font-mono uppercase tracking-widest block">🏦 Corporate Bank Details</span>
+                    <div className="p-4 bg-neutral-950 border border-white/5 rounded-2xl space-y-3.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 font-mono">BANK:</span>
+                        <span className="text-white font-bold">{localStorage.getItem("framez_bank_name") || "Maybank (Malayan Banking Berhad)"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 font-mono">HOLDER:</span>
+                        <span className="text-white font-bold">{localStorage.getItem("framez_bank_acc_name") || "Framez Photobooth Enterprise"}</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-gray-500 font-mono">ACCOUNT NO:</span>
+                        <span className="text-[#a1c398] font-bold font-mono bg-black/60 p-2 rounded text-center tracking-wider text-sm select-all">
+                          {localStorage.getItem("framez_bank_acc_no") || "5140-1234-5678"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* DuitNow QR Option */}
+                    <div className="p-4 bg-[#799351]/10 border border-[#799351]/20 rounded-2xl text-center space-y-2.5">
+                      <span className="text-[10px] text-white font-mono uppercase font-bold block">Or Scan DuitNow QR</span>
+                      <div className="w-28 h-28 bg-white p-1 rounded-xl mx-auto flex items-center justify-center">
+                        {localStorage.getItem("framez_bank_qr_url") ? (
+                          <img src={localStorage.getItem("framez_bank_qr_url")!} alt="DuitNow Corporate QR" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-full h-full border border-black flex flex-col justify-between p-1 text-black">
+                            <div className="flex justify-between">
+                              <div className="w-3.5 h-3.5 bg-black" />
+                              <div className="w-3.5 h-3.5 bg-black" />
+                            </div>
+                            <span className="text-[9px] font-bold font-mono tracking-tighter">DuitNow QR</span>
+                            <div className="flex justify-between">
+                              <div className="w-3.5 h-3.5 bg-black" />
+                              <div className="w-3.5 h-3.5 bg-black" />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Upload Section */}
+                  <div className="lg:col-span-7 space-y-4">
+                    <span className="text-[10px] text-gray-400 font-bold font-mono uppercase tracking-widest block">📤 Upload Transaction Slip</span>
+                    
+                    {activeBooking.secondPaymentRejected && (
+                      <div className="p-3.5 bg-red-950/40 border border-red-500/20 rounded-xl text-xs text-red-300">
+                        <strong className="block mb-1">❌ Rejected Re-submission Notice:</strong>
+                        {activeBooking.secondPaymentRejectionReason || "No explanation provided. Please upload a valid payment proof matching your remaining balance."}
+                      </div>
+                    )}
+
+                    {activeBooking.secondReceiptUrl && !activeBooking.secondPaymentRejected ? (
+                      <div className="p-6 bg-black/40 border border-white/5 rounded-2xl text-center space-y-4">
+                        <Clock className="w-10 h-10 text-amber-500 mx-auto animate-spin" />
+                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">Pending Co-Founder Approval</h4>
+                        <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                          Your 2nd Payment receipt has been uploaded successfully! Irfan & Irsalina are validating this bank transfer against our master corporate account statement. We will notify you here as soon as it clears.
+                        </p>
+                        <div className="p-3 bg-neutral-900 border border-white/5 rounded-xl text-xs flex justify-between items-center text-gray-400">
+                          <span className="font-mono">Uploaded Slip:</span>
+                          <a href={activeBooking.secondReceiptUrl} target="_blank" rel="noopener noreferrer" className="text-[#a1c398] hover:underline font-mono truncate max-w-[180px]">
+                            {activeBooking.secondReceiptUrl.split("/").pop()} ↗
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div
+                          onDragOver={handleDragOver}
+                          onDragLeave={handleDragLeave}
+                          onDrop={handleDrop}
+                          onClick={() => fileInputRef.current?.click()}
+                          className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                            isDragging
+                              ? "border-[#a1c398] bg-[#799351]/10 scale-[1.01]"
+                              : uploadSuccess
+                              ? "border-[#799351] bg-[#799351]/5"
+                              : "border-white/10 hover:border-[#799351]/40 bg-neutral-950/40"
+                          }`}
+                        >
+                          <input
+                            type="file"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+                          {uploadSuccess ? (
+                            <div className="space-y-2">
+                              <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto" />
+                              <span className="text-xs font-bold text-white block">Receipt Loaded Successfully</span>
+                              <span className="text-[10px] text-gray-400 font-mono block truncate max-w-[240px]">
+                                {uploadedFileName || "2nd_payment_slip.pdf"}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <Upload className="w-10 h-10 text-gray-500 mx-auto animate-bounce" />
+                              <span className="text-xs font-semibold text-white block">Select or drag transfer screenshot</span>
+                              <span className="text-[9px] text-gray-500 block">Accepted formats: PDF, PNG, JPG (Max 5MB)</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {uploadSuccess && (
+                          <button
+                            onClick={() => {
+                              if (!onUpdateBooking) return;
+                              
+                              const updated: Booking = {
+                                ...activeBooking,
+                                secondReceiptUrl: `https://framez.my/uploads/${uploadedFileName || "2nd_payment_slip.pdf"}`,
+                                secondPaymentApproved: false,
+                                secondPaymentRejected: false,
+                                secondPaymentRejectionReason: undefined
+                              };
+                              
+                              onUpdateBooking(updated);
+                              if (onAddAuditLog) {
+                                onAddAuditLog(
+                                  "Client Workspace",
+                                  `Submitted 2nd Payment receipt (RM ${(activeBooking.totalPrice - 150).toFixed(2)}) for event ID ${activeBooking.id}.`,
+                                  "info"
+                                );
+                              }
+                              setUploadSuccess(false);
+                              setUploadedFileName(null);
+                              alert("🚀 2nd Payment receipt submitted successfully! The co-founders have been notified for immediate verification.");
+                            }}
+                            className="w-full py-3 bg-[#799351] hover:bg-[#5f743e] text-neutral-950 font-bold uppercase tracking-wider text-xs rounded-xl transition-all shadow-md"
+                          >
+                            Submit 2nd Payment Receipt Proof
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
             </div>
           )}
 

@@ -6,6 +6,7 @@ interface AvailabilityCalendarProps {
   selectedDate: string;
   onSelectDate: (date: string) => void;
   selectedState: string;
+  isCalendarSynced?: boolean;
 }
 
 export default function AvailabilityCalendar({
@@ -13,6 +14,7 @@ export default function AvailabilityCalendar({
   selectedDate,
   onSelectDate,
   selectedState,
+  isCalendarSynced = true,
 }: AvailabilityCalendarProps) {
   
   // Create 15 days representation of the calendar for July 2026
@@ -56,7 +58,13 @@ export default function AvailabilityCalendar({
       {/* Grid of Slots */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {daysArray.map((dateStr) => {
-          const booking = bookingsList.find((b) => b.date === dateStr);
+          const booking = bookingsList.find((b) => {
+            if (isCalendarSynced) {
+              return b.date === dateStr;
+            } else {
+              return b.date === dateStr && b.state.toLowerCase() === selectedState.toLowerCase();
+            }
+          });
           const isSelected = selectedDate === dateStr;
           
           let cardStyle = "bg-neutral-900/40 border-white/5 text-gray-300 hover:border-[#799351]/40";

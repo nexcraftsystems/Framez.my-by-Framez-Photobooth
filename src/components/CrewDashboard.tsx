@@ -1,5 +1,8 @@
 import React, { useState, useRef } from "react";
-import { Booking, CrewLead, HardwareItem, ChatMessage, SystemAuditLog } from "../types";
+import { Booking, CrewLead, HardwareItem, ChatMessage, SystemAuditLog, InventoryLocation, InventoryItem, InventoryRequest, SystemNotification, Role } from "../types";
+import InventoryManager from "./InventoryManager";
+import NotificationManager from "./NotificationManager";
+import CrewProfileView from "./CrewProfileView";
 import { 
   Clock, 
   CheckCircle, 
@@ -19,7 +22,9 @@ import {
   Send, 
   Star, 
   Search, 
-  Check 
+  Check,
+  Bell,
+  Package
 } from "lucide-react";
 
 interface CrewDashboardProps {
@@ -32,6 +37,18 @@ interface CrewDashboardProps {
   onUpdateCrewLeads: React.Dispatch<React.SetStateAction<CrewLead[]>>;
   chatMessages: ChatMessage[];
   onSendMessage: (clientId: string, text: string, sender: "CLIENT" | "CREW" | "OWNER") => void;
+  
+  // New Inventory state
+  locations: InventoryLocation[];
+  onUpdateLocations: React.Dispatch<React.SetStateAction<InventoryLocation[]>>;
+  inventory: InventoryItem[];
+  onUpdateInventory: React.Dispatch<React.SetStateAction<InventoryItem[]>>;
+  inventoryRequests: InventoryRequest[];
+  onUpdateRequests: React.Dispatch<React.SetStateAction<InventoryRequest[]>>;
+  
+  // New Notifications state
+  notifications: SystemNotification[];
+  onUpdateNotifications: React.Dispatch<React.SetStateAction<SystemNotification[]>>;
 }
 
 export default function CrewDashboard({
@@ -44,14 +61,22 @@ export default function CrewDashboard({
   onUpdateCrewLeads,
   chatMessages,
   onSendMessage,
+  locations,
+  onUpdateLocations,
+  inventory,
+  onUpdateInventory,
+  inventoryRequests,
+  onUpdateRequests,
+  notifications,
+  onUpdateNotifications,
 }: CrewDashboardProps) {
   // Find crew lead profile based on email
   const nameFromEmail = userEmail.includes("zack") ? "Zack" : userEmail.includes("maya") ? "Maya" : "Zack";
   const crewProfile = crewLeads.find((c) => c.name.toLowerCase() === nameFromEmail.toLowerCase()) || crewLeads[0];
 
   // UI state variables
-  const [activeTab, setActiveTab] = useState<"dashboard" | "jobs" | "chat" | "referred" | "hardware">("dashboard");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<"dashboard" | "jobs" | "chat" | "referred" | "hardware" | "inventory" | "notifications" | "profile">("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -231,6 +256,9 @@ export default function CrewDashboard({
               { id: "chat", label: "WhatsApp Chat", icon: MessageSquare },
               { id: "referred", label: "Referred Clients", icon: Users },
               { id: "hardware", label: "Central Hardware", icon: Shield },
+              { id: "inventory", label: "Inventory", icon: Package },
+              { id: "notifications", label: "Notifications", icon: Bell },
+              { id: "profile", label: "Profile", icon: User },
             ].map((tab) => {
               const isSelected = activeTab === tab.id;
               return (
@@ -278,6 +306,9 @@ export default function CrewDashboard({
             {activeTab === "chat" && "Coordinating Multi-Party Shared WhatsApp chat room"}
             {activeTab === "referred" && "Crew Referral Tracker & Affiliate Sales List"}
             {activeTab === "hardware" && "Central Hardware Sign-out & defection logger"}
+            {activeTab === "inventory" && "Central Inventory Location Directory"}
+            {activeTab === "notifications" && "System Alerts & Broadcasting Messages"}
+            {activeTab === "profile" && "Personal Crew Coordinator Profile & Bank Coordinates"}
           </h3>
           <div className="flex items-center gap-2 px-3.5 py-1 bg-[#799351]/10 rounded-full border border-[#799351]/20 shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -882,6 +913,40 @@ export default function CrewDashboard({
             </div>
 
           </div>
+        )}
+
+        {activeTab === "inventory" && (
+          <InventoryManager
+            locations={locations}
+            inventory={inventory}
+            inventoryRequests={inventoryRequests}
+            onUpdateInventory={onUpdateInventory}
+            onUpdateLocations={onUpdateLocations}
+            onUpdateRequests={onUpdateRequests}
+            onAddAuditLog={onAddAuditLog}
+            role="CREW"
+            userName={crewProfile.name}
+          />
+        )}
+
+        {activeTab === "notifications" && (
+          <NotificationManager
+            notifications={notifications}
+            onUpdateNotifications={onUpdateNotifications}
+            role="CREW"
+            userEmail={userEmail}
+            onAddAuditLog={onAddAuditLog}
+          />
+        )}
+
+        {activeTab === "profile" && (
+          <CrewProfileView
+            profile={crewProfile}
+            onUpdateCrewLeads={onUpdateCrewLeads}
+            role="CREW"
+            onAddAuditLog={onAddAuditLog}
+            allCrewList={crewLeads}
+          />
         )}
 
       </div>

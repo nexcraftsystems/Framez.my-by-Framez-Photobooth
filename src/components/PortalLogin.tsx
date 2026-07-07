@@ -6,10 +6,12 @@ import { motion } from "motion/react";
 interface PortalLoginProps {
   onClose: () => void;
   onLoginSuccess: (role: Role, email: string) => void;
+  onRegisterRedirect?: () => void;
 }
 
-export default function PortalLogin({ onClose, onLoginSuccess }: PortalLoginProps) {
+export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirect }: PortalLoginProps) {
   const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
   const [hoveredSocial, setHoveredSocial] = useState<string | null>(null);
   const [btnHovered, setBtnHovered] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -213,69 +215,88 @@ export default function PortalLogin({ onClose, onLoginSuccess }: PortalLoginProp
               <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-white/10" />
             </div>
 
-            {/* Email Input Group with rotating conic-gradient button */}
-            <form onSubmit={handleFormSubmit} className="relative z-10">
-              <div className="flex items-center justify-between bg-black/40 border border-white/10 rounded-[1.25rem] p-2 focus-within:bg-black/60 focus-within:border-[#799351] transition-all gap-2">
-                <div className="flex-1 pl-3 flex flex-col py-1">
-                  <label className="text-[9px] font-bold text-gray-500 font-mono uppercase tracking-wider leading-none">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="Enter your email"
-                    className="bg-transparent border-none outline-none text-white text-xs font-medium mt-1 w-full placeholder-gray-600"
-                  />
-                </div>
+            {/* Email & Password Input Group */}
+            <form onSubmit={handleFormSubmit} className="relative z-10 space-y-4">
+              <div className="flex flex-col bg-black/40 border border-white/10 rounded-[1.25rem] p-3 focus-within:bg-black/60 focus-within:border-[#799351] transition-all">
+                <label className="text-[9px] font-bold text-gray-500 font-mono uppercase tracking-wider leading-none mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="Enter your email"
+                  className="bg-transparent border-none outline-none text-white text-xs font-medium w-full placeholder-gray-600"
+                />
+              </div>
 
-                {/* Submit Button (CRITICAL): Rotating conic-gradient border on hover */}
+              <div className="flex flex-col bg-black/40 border border-white/10 rounded-[1.25rem] p-3 focus-within:bg-black/60 focus-within:border-[#799351] transition-all">
+                <label className="text-[9px] font-bold text-gray-500 font-mono uppercase tracking-wider leading-none mb-1">
+                  Access Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-transparent border-none outline-none text-white text-xs font-medium w-full placeholder-gray-600 font-mono"
+                />
+              </div>
+
+              {/* Submit Button (CRITICAL): Rotating conic-gradient border on hover */}
+              <div 
+                className="relative flex items-center justify-center p-0.5 rounded-[1.25rem] overflow-hidden"
+                onMouseEnter={() => setBtnHovered(true)}
+                onMouseLeave={() => setBtnHovered(false)}
+              >
+                {/* Conic background halo (outer glow spinning) */}
                 <div 
-                  className="relative flex items-center justify-center p-0.5 rounded-full"
-                  onMouseEnter={() => setBtnHovered(true)}
-                  onMouseLeave={() => setBtnHovered(false)}
+                  className={`absolute inset-0 rounded-[1.25rem] blur-md opacity-75 transition-all duration-500 scale-105 pointer-events-none ${
+                    btnHovered ? "animate-spin-conic opacity-100" : "opacity-0"
+                  }`}
+                  style={{
+                    background: "conic-gradient(from 0deg, #799351, #a1c398, #5f743e, #799351)"
+                  }}
+                />
+
+                {/* Conic background border */}
+                <div 
+                  className={`absolute inset-0 rounded-[1.25rem] transition-all duration-300 ${
+                    btnHovered ? "animate-spin-conic" : ""
+                  }`}
+                  style={{
+                    background: "conic-gradient(from 0deg, #799351, #a1c398, #5f743e, #799351)"
+                  }}
+                />
+
+                {/* Inner black button */}
+                <button
+                  type="submit"
+                  className="relative w-full py-3.5 rounded-[1.15rem] bg-neutral-950 flex items-center justify-center gap-2 text-white shadow-[inner_0_2px_4px_rgba(255,255,255,0.2)] hover:scale-101 transition-transform duration-200 z-10 cursor-pointer text-xs font-semibold uppercase tracking-wider text-[#a1c398]"
                 >
-                  {/* Conic background halo (outer glow spinning) */}
-                  <div 
-                    className={`absolute inset-0 rounded-full blur-md opacity-75 transition-all duration-500 scale-105 pointer-events-none ${
-                      btnHovered ? "animate-spin-conic opacity-100" : "opacity-0"
-                    }`}
-                    style={{
-                      background: "conic-gradient(from 0deg, #799351, #a1c398, #5f743e, #799351)"
-                    }}
-                  />
-
-                  {/* Conic background border */}
-                  <div 
-                    className={`absolute inset-0 rounded-full transition-all duration-300 ${
-                      btnHovered ? "animate-spin-conic" : ""
-                    }`}
-                    style={{
-                      background: "conic-gradient(from 0deg, #799351, #a1c398, #5f743e, #799351)"
-                    }}
-                  />
-
-                  {/* Inner black button */}
-                  <button
-                    type="submit"
-                    className="relative w-[48px] h-[48px] rounded-full bg-neutral-950 flex items-center justify-center text-white shadow-[inner_0_2px_4px_rgba(255,255,255,0.2)] hover:scale-102 transition-transform duration-200 z-10 cursor-pointer"
-                  >
-                    <ArrowRight className={`w-4 h-4 text-white transition-transform duration-300 ${btnHovered ? "translate-x-0.5" : ""}`} />
-                  </button>
-                </div>
+                  <span>Sign In To Workspace</span>
+                  <ArrowRight className={`w-4 h-4 text-white transition-transform duration-300 ${btnHovered ? "translate-x-0.5" : ""}`} />
+                </button>
               </div>
             </form>
           </div>
 
-          {/* Footer with background clip sunset/woody-green gradient */}
+          {/* Footer with redirection to main website calendar */}
           <div className="text-center text-[11px] text-gray-500 mt-6 relative z-10">
-            <span>Don't have an account? </span>
+            <span>Need to book a photobooth slot? </span>
             <button
-              onClick={() => setEmailInput("nexcraftsystems@gmail.com")}
+              onClick={() => {
+                if (onRegisterRedirect) {
+                  onRegisterRedirect();
+                } else {
+                  onClose();
+                }
+              }}
               className="font-semibold transition-all hover:opacity-85 text-[#a1c398] hover:underline"
             >
-              Sign up
+              Go to Calendar & Booking
             </button>
           </div>
 

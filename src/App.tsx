@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Role, Booking, HardwareItem, CrewLead, ChatMessage, SystemAuditLog } from "./types";
+import { Role, Booking, HardwareItem, CrewLead, ChatMessage, SystemAuditLog, Testimonial, InventoryLocation, InventoryItem, InventoryRequest, SystemNotification } from "./types";
 import {
   PACKAGES,
   ADDONS,
@@ -8,6 +8,10 @@ import {
   DEFAULT_CREW,
   DEFAULT_CHATS,
   DEFAULT_AUDIT_LOGS,
+  DEFAULT_TESTIMONIALS,
+  DEFAULT_LOCATIONS,
+  DEFAULT_INVENTORY,
+  DEFAULT_NOTIFICATIONS,
 } from "./data";
 
 // Sub-components
@@ -63,6 +67,36 @@ export default function App() {
     return saved ? JSON.parse(saved) : DEFAULT_AUDIT_LOGS;
   });
 
+  const [isCalendarSynced, setIsCalendarSynced] = useState<boolean>(() => {
+    const saved = localStorage.getItem("framez_calendar_synced");
+    return saved ? saved === "true" : true;
+  });
+
+  const [testimonialsList, setTestimonialsList] = useState<Testimonial[]>(() => {
+    const saved = localStorage.getItem("framez_testimonials");
+    return saved ? JSON.parse(saved) : DEFAULT_TESTIMONIALS;
+  });
+
+  const [locations, setLocations] = useState<InventoryLocation[]>(() => {
+    const saved = localStorage.getItem("framez_locations");
+    return saved ? JSON.parse(saved) : DEFAULT_LOCATIONS;
+  });
+
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const saved = localStorage.getItem("framez_inventory");
+    return saved ? JSON.parse(saved) : DEFAULT_INVENTORY;
+  });
+
+  const [inventoryRequests, setInventoryRequests] = useState<InventoryRequest[]>(() => {
+    const saved = localStorage.getItem("framez_inventory_requests");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [notifications, setNotifications] = useState<SystemNotification[]>(() => {
+    const saved = localStorage.getItem("framez_notifications");
+    return saved ? JSON.parse(saved) : DEFAULT_NOTIFICATIONS;
+  });
+
   // UI state
   const [loginOpen, setLoginOpen] = useState(false);
   const [currentSection, setCurrentSection] = useState("hero");
@@ -85,7 +119,13 @@ export default function App() {
     localStorage.setItem("framez_crew", JSON.stringify(crewLeads));
     localStorage.setItem("framez_chats", JSON.stringify(chatMessages));
     localStorage.setItem("framez_logs", JSON.stringify(auditLogs));
-  }, [activeRole, userEmail, bookingsList, hardwareList, crewLeads, chatMessages, auditLogs]);
+    localStorage.setItem("framez_calendar_synced", isCalendarSynced ? "true" : "false");
+    localStorage.setItem("framez_testimonials", JSON.stringify(testimonialsList));
+    localStorage.setItem("framez_locations", JSON.stringify(locations));
+    localStorage.setItem("framez_inventory", JSON.stringify(inventory));
+    localStorage.setItem("framez_inventory_requests", JSON.stringify(inventoryRequests));
+    localStorage.setItem("framez_notifications", JSON.stringify(notifications));
+  }, [activeRole, userEmail, bookingsList, hardwareList, crewLeads, chatMessages, auditLogs, isCalendarSynced, testimonialsList, locations, inventory, inventoryRequests, notifications]);
 
   // Database mutations helpers
   const handleNewBooking = (newBooking: Booking) => {
@@ -109,12 +149,28 @@ export default function App() {
     );
   };
 
-  const handleAssignCrew = (bookingId: string, crewId: string) => {
+  const handleAssignCrew = (bookingId: string, crewId: string, isSecond?: boolean) => {
     setBookingsList((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, crewLeadId: crewId } : b))
+      prev.map((b) => (b.id === bookingId ? { ...b, [isSecond ? "crewLeadId2" : "crewLeadId"]: crewId } : b))
     );
-    const crewName = crewLeads.find((c) => c.id === crewId)?.name || "Zack";
-    addAuditLog("Irfan (Co-Founder)", `Assigned Crew Coordinator ${crewName} to booking reference ${bookingId}.`, "info");
+    const crewName = crewLeads.find((c) => c.id === crewId)?.name || "Unassigned";
+    addAuditLog("Irfan (Co-Founder)", `Assigned Crew Coordinator ${crewName} as Person In-charge ${isSecond ? "2" : "1"} to booking reference ${bookingId}.`, "info");
+
+    if (crewId) {
+      const b = bookingsList.find(book => book.id === bookingId);
+      const newNotif: SystemNotification = {
+        id: "notif_assign_" + Math.random().toString(36).substring(2, 9),
+        title: "📋 New Event Assigned!",
+        message: `You have been assigned as Person In-charge ${isSecond ? "2" : "1"} for ${b?.clientName || "Client"}'s ${b?.packageName || "photobooth"} event on ${b?.date || "TBD"}. Venue: ${b?.locationAddress || "Specified venue"}.`,
+        recipientRole: "PERSONAL_CREW",
+        targetCrewId: crewId,
+        sender: "System Coordinator",
+        timestamp: new Date().toISOString(),
+        isRead: false,
+        type: "TASK"
+      };
+      setNotifications(prev => [newNotif, ...prev]);
+    }
   };
 
   const handleSendMessage = (clientId: string, text: string, sender: "CLIENT" | "CREW" | "OWNER") => {
@@ -246,6 +302,8 @@ export default function App() {
                 preselectedPackageId={preselectedPackageId}
                 onClearPreselectedPackage={() => setPreselectedPackageId("")}
                 onAddAuditLog={addAuditLog}
+                testimonialsList={testimonialsList}
+                isCalendarSynced={isCalendarSynced}
               />
             )}
           </AnimatePresence>
@@ -308,6 +366,9 @@ export default function App() {
                 bookingsList={bookingsList}
                 role={activeRole}
                 onAddAuditLog={addAuditLog}
+                onUpdateBooking={(updated) => {
+                  setBookingsList((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+                }}
               />
             )}
 
@@ -322,6 +383,14 @@ export default function App() {
                 onUpdateCrewLeads={setCrewLeads}
                 chatMessages={chatMessages}
                 onSendMessage={handleSendMessage}
+                locations={locations}
+                onUpdateLocations={setLocations}
+                inventory={inventory}
+                onUpdateInventory={setInventory}
+                inventoryRequests={inventoryRequests}
+                onUpdateRequests={setInventoryRequests}
+                notifications={notifications}
+                onUpdateNotifications={setNotifications}
               />
             )}
 
@@ -387,6 +456,19 @@ export default function App() {
                   role={activeRole}
                   onResetDatabase={handleResetDatabase}
                   onSimulateInboundInquiry={handleSimulateInboundInquiry}
+                  isCalendarSynced={isCalendarSynced}
+                  onToggleCalendarSync={() => setIsCalendarSynced(!isCalendarSynced)}
+                  testimonialsList={testimonialsList}
+                  onUpdateTestimonials={setTestimonialsList}
+                  locations={locations}
+                  onUpdateLocations={setLocations}
+                  inventory={inventory}
+                  onUpdateInventory={setInventory}
+                  inventoryRequests={inventoryRequests}
+                  onUpdateRequests={setInventoryRequests}
+                  notifications={notifications}
+                  onUpdateNotifications={setNotifications}
+                  onUpdateBookings={setBookingsList}
                 />
               )
             )}
@@ -408,6 +490,10 @@ export default function App() {
         <PortalLogin
           onClose={() => setLoginOpen(false)}
           onLoginSuccess={handleLoginSuccess}
+          onRegisterRedirect={() => {
+            setLoginOpen(false);
+            setCurrentSection("calendar");
+          }}
         />
       )}
 

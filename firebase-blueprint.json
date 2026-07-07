@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "Account": {
+      "title": "Account",
+      "description": "Google SSO user credential mapping and role attributes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["CLIENT", "CREW", "OWNER", "DEVELOPER", "GUEST"] },
+        "accessStatus": { "type": "string" },
+        "clientBookingIds": { "type": "array" }
+      },
+      "required": ["id", "email", "name", "role", "accessStatus"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Event booking itemized pricing and payment checking record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "state": { "type": "string" },
+        "packageName": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "totalPrice": { "type": "number" },
+        "status": { "type": "string", "enum": ["AVAILABLE", "PREBOOKED", "BOOKED", "REJECTED"] }
+      },
+      "required": ["id", "date", "state", "packageName", "clientName", "clientEmail", "totalPrice", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System operational and state transition event log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "actor": { "type": "string" },
+        "action": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "warning", "alert"] }
+      },
+      "required": ["id", "timestamp", "actor", "action", "severity"]
+    }
+  },
+  "firestore": {
+    "/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "Store user accounts with specific administrative roles"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Store Master booking slots and verification details"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Secure append-only trace log for administrative actions"
+    }
+  }
+}

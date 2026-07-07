@@ -23,7 +23,7 @@ export default function NavigationHeader({
     { id: "about", label: "About" },
     { id: "spaces", label: "Spaces" },
     { id: "how-to-book", label: "How to Book" },
-    { id: "locations", label: "Locations" },
+    { id: "locations", label: "Memories" },
     { id: "calendar", label: "Calendar" },
     { id: "contact", label: "Contact" },
   ];
@@ -62,7 +62,7 @@ export default function NavigationHeader({
             );
           })
         ) : (
-          <div className="px-5 py-2 text-xs font-mono font-bold tracking-widest text-[#a1c398] flex items-center gap-1.5">
+          <div className="px-5 py-2 text-xs lg:text-sm font-medium font-sans text-[#a1c398] tracking-wider uppercase flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-[#799351] animate-pulse" />
             SECURE {activeRole} PORTAL WORKSPACE
           </div>

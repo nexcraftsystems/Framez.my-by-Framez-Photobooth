@@ -20,10 +20,11 @@ import {
   QrCode, 
   FileCheck,
   Plus,
-  Minus
+  Minus,
+  Instagram
 } from "lucide-react";
 import { PACKAGES, STATES_MAP, ADDONS } from "../data";
-import { Package, Booking } from "../types";
+import { Package, Booking, Testimonial } from "../types";
 
 interface WebsitePagesProps {
   currentSection: string;
@@ -35,6 +36,8 @@ interface WebsitePagesProps {
   preselectedPackageId?: string;
   onClearPreselectedPackage?: () => void;
   onAddAuditLog?: (actor: string, action: string, severity: "info" | "warning" | "alert") => void;
+  testimonialsList?: Testimonial[];
+  isCalendarSynced?: boolean;
 }
 
 const slideVariants = {
@@ -59,6 +62,8 @@ export default function WebsitePages({
   preselectedPackageId = "",
   onClearPreselectedPackage,
   onAddAuditLog,
+  testimonialsList = [],
+  isCalendarSynced = true,
 }: WebsitePagesProps) {
   
   // Wizard state
@@ -74,6 +79,10 @@ export default function WebsitePages({
   const [backdropResize, setBackdropResize] = useState(false);
   const [extraGuestbook, setExtraGuestbook] = useState(false);
   
+  // Payment Type & Portal password
+  const [paymentType, setPaymentType] = useState<"Booking Fees" | "Full Package">("Full Package");
+  const [portalPassword, setPortalPassword] = useState("");
+
   // Contact Details
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
@@ -153,8 +162,8 @@ export default function WebsitePages({
 
   // Submit Reservation Action
   const handleSubmitBooking = () => {
-    if (!clientName || !clientEmail || !clientPhone) {
-      alert("Please fill in your contact information to submit your booking.");
+    if (!clientName || !clientEmail || !clientPhone || !portalPassword) {
+      alert("Please fill in your contact information and create a portal password to submit your booking.");
       return;
     }
 
@@ -181,6 +190,9 @@ export default function WebsitePages({
       locationAddress: venueAddress || "TBD Address",
       receiptUrl: receiptFileName ? `https://framez.my/receipts/${receiptFileName}` : undefined,
       receiptApproved: false,
+      paymentType: paymentType,
+      paymentAmount: paymentType === "Booking Fees" ? 150 : calculatedTotal,
+      portalPassword: portalPassword || "123456", // default if blank
     };
 
     onNewBooking(newBookingObj);
@@ -353,81 +365,59 @@ export default function WebsitePages({
           exit="exit"
           variants={slideVariants}
           transition={slideTransition}
-          className="glass-card rounded-[2.5rem] p-8 md:p-12 lg:p-16 border-[#799351]/20 bg-black/60 backdrop-blur-xl"
+          className="w-full relative bg-white text-neutral-900 rounded-[2.5rem] p-8 md:p-12 lg:p-16 border border-neutral-200 overflow-hidden min-h-[90vh] flex flex-col justify-between shadow-2xl"
         >
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-center">
-            {/* Left Column - Map details */}
-            <div className="lg:col-span-5 space-y-6">
-              <span className="text-[11px] font-mono font-bold text-[#a1c398] uppercase tracking-widest block">
-                NATIONWIDE LOGISTICS
-              </span>
-              <h2 className="text-4xl md:text-5xl text-white font-display leading-tight">
-                Regions Covered with <span className="italic font-light">RM0 Transit Fees</span>
-              </h2>
-              <p className="text-sm text-gray-300 font-light leading-relaxed">
-                To guarantee affordability and visual quality, Irfan & Irsalina maintain independent logistics networks. We are thrilled to offer <strong>RM0 travel and transit fees</strong> for all wedding and corporate booking packages inside the five key Malaysian states.
-              </p>
+          {/* Subtle elegant agency top lines */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#799351] via-[#a1c398] to-[#799351]" />
+          
+          <div className="max-w-[1400px] mx-auto w-full space-y-12">
+            {/* Top Typography & Navigation row */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-neutral-100 pb-8">
+              <div className="space-y-3.5 max-w-2xl">
+                <span className="text-[10px] font-mono font-bold text-[#799351] uppercase tracking-[0.2em] block">
+                  MEMORIES & SHARED JOY
+                </span>
+                <h2 className="text-4xl md:text-5xl lg:text-6xl font-display font-medium text-neutral-950 tracking-tight leading-none">
+                  What Clients Say <br />
+                  <span className="italic font-light text-neutral-600">About the Experience</span>
+                </h2>
 
-              {/* State select list */}
-              <div className="space-y-2 pt-4">
-                {STATES_MAP.map((state) => {
-                  const isSelected = selectedState === state.id;
-                  return (
-                    <button
-                      key={state.id}
-                      onClick={() => onStateSelect(state.id)}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
-                        isSelected
-                          ? "bg-[#799351]/20 border-[#799351] text-white"
-                          : "bg-neutral-900/40 border-white/5 text-gray-400 hover:border-[#799351]/30 hover:text-white"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? "bg-[#a1c398] animate-pulse" : "bg-neutral-600"}`} />
-                        <span className="text-xs font-semibold">{state.name}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-[#a1c398] font-bold">
-                        {state.desc}
-                      </span>
-                    </button>
-                  );
-                })}
+              </div>
+
+              {/* Slider Arrow buttons */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prevIdx = (testimonialsList.length + (testimonialsList.findIndex(t => t.id === testimonialsList[0]?.id) - 1)) % testimonialsList.length;
+                    // Simply shift list representation or trigger manual scroll
+                    const btn = document.getElementById("testimonial-prev-trigger");
+                    if (btn) btn.click();
+                  }}
+                  id="memories-prev-btn"
+                  className="w-12 h-12 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-all shadow-sm"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const btn = document.getElementById("testimonial-next-trigger");
+                    if (btn) btn.click();
+                  }}
+                  id="memories-next-btn"
+                  className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center text-white hover:bg-neutral-800 transition-all shadow-md"
+                >
+                  <ArrowRight className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
-            {/* Right Column - Map SVG */}
-            <div className="lg:col-span-7 flex flex-col items-center justify-center bg-neutral-950/40 rounded-3xl p-8 border border-white/5 relative overflow-hidden min-h-[380px] shadow-inner">
-              <span className="absolute top-4 left-4 text-[10px] font-mono text-gray-500 uppercase">
-                Malaysia Interactive Coverage Map
-              </span>
-
-              <svg className="w-full max-w-[280px] h-[280px]" viewBox="0 0 240 240" fill="none">
-                <g stroke="#ffffff" strokeWidth="1.5" strokeOpacity="0.2">
-                  {STATES_MAP.map((st) => (
-                    <path
-                      key={st.id}
-                      d={st.coords}
-                      fill={selectedState === st.id ? "rgba(121, 147, 81, 0.45)" : "rgba(121, 147, 81, 0.1)"}
-                      stroke={selectedState === st.id ? "#799351" : "rgba(255,255,255,0.15)"}
-                      strokeWidth={selectedState === st.id ? "2.5" : "1"}
-                      className="cursor-pointer transition-all hover:fill-[#799351]/30"
-                      onClick={() => onStateSelect(st.id)}
-                    />
-                  ))}
-                </g>
-                <text x="35" y="40" fill="rgba(255,255,255,0.4)" fontSize="10" fontFamily="monospace">West Malaysia</text>
-              </svg>
-
-              <div className="mt-4 text-center">
-                <span className="text-sm font-semibold text-[#a1c398] font-display">
-                  {STATES_MAP.find((s) => s.id === selectedState)?.name} Coverage Audited
-                </span>
-                <span className="text-xs text-gray-400 font-light mt-1 block">
-                  Includes full-day on-site physical support with zero fuel or transport surcharges.
-                </span>
-              </div>
-            </div>
+            {/* Testimonial Active Display Controller */}
+            <TestimonialCarousel testimonials={testimonialsList} />
           </div>
+
+
         </motion.div>
       )}
 
@@ -628,7 +618,15 @@ export default function WebsitePages({
                           
                           // Check if day is already booked in the selected region/state
                           const selectedStateName = STATES_MAP.find((s) => s.id === wizardState)?.name || "Selangor";
-                          const isBooked = bookingsList.some((b) => b.date === dateStr && b.state.toLowerCase() === selectedStateName.toLowerCase() && b.status === "BOOKED");
+                          const isBooked = bookingsList.some((b) => {
+                            const isDateMatch = b.date === dateStr;
+                            const isStatusMatch = b.status === "BOOKED" || b.status === "PREBOOKED";
+                            if (isCalendarSynced) {
+                              return isDateMatch && isStatusMatch;
+                            } else {
+                              return isDateMatch && isStatusMatch && b.state.toLowerCase() === selectedStateName.toLowerCase();
+                            }
+                          });
                           const isSelected = wizardDate === dateStr;
 
                           return (
@@ -922,23 +920,61 @@ export default function WebsitePages({
                       <span className="w-6 h-6 rounded-lg bg-[#799351]/20 text-[#a1c398] flex items-center justify-center font-mono text-xs font-bold">5</span>
                       Bank Transfer Information
                     </h3>
+
+                    {/* Payment Method Selector */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase tracking-wider block">
+                        Choose Payment Type
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentType("Booking Fees")}
+                          className={`p-3.5 rounded-xl border text-left transition-all ${
+                            paymentType === "Booking Fees"
+                              ? "bg-[#799351]/20 border-[#799351] text-white shadow-md"
+                              : "bg-neutral-900/40 border-white/5 text-gray-400 hover:border-[#799351]/30 hover:text-white"
+                          }`}
+                        >
+                          <div className="text-xs font-bold">Booking Fees</div>
+                          <div className="text-[10px] font-mono text-[#a1c398] mt-0.5 font-semibold">RM 150.00 (Fixed, Non-Refundable)</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentType("Full Package")}
+                          className={`p-3.5 rounded-xl border text-left transition-all ${
+                            paymentType === "Full Package"
+                              ? "bg-[#799351]/20 border-[#799351] text-white shadow-md"
+                              : "bg-neutral-900/40 border-white/5 text-gray-400 hover:border-[#799351]/30 hover:text-white"
+                          }`}
+                        >
+                          <div className="text-xs font-bold">Full Package</div>
+                          <div className="text-[10px] font-mono text-[#a1c398] mt-0.5 font-semibold">RM {calculatedTotal.toLocaleString()} (Full Amount)</div>
+                        </button>
+                      </div>
+                    </div>
+
                     <p className="text-xs text-gray-300 font-light leading-relaxed">
-                      To secure your slot on <strong>{wizardDate}</strong>, please complete an online bank transfer of <strong>RM {calculatedTotal}</strong> to our Maybank corporate account:
+                      To secure your slot on <strong>{wizardDate}</strong>, please complete an online bank transfer of <strong>RM {paymentType === "Booking Fees" ? "150 (Booking Fee)" : `${calculatedTotal} (Full Package)`}</strong> to our Maybank corporate account:
                     </p>
 
                     <div className="bg-neutral-900 border border-white/10 rounded-2xl p-5 space-y-3.5">
                       <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                         <span className="text-gray-500 uppercase">Bank:</span>
-                        <span className="text-white col-span-2 font-semibold">Maybank (Malayan Banking Berhad)</span>
+                        <span className="text-white col-span-2 font-semibold">
+                          {localStorage.getItem("framez_bank_name") || "Maybank (Malayan Banking Berhad)"}
+                        </span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                         <span className="text-gray-500 uppercase">Account Name:</span>
-                        <span className="text-white col-span-2 font-semibold uppercase">Framez Photobooth Enterprise</span>
+                        <span className="text-white col-span-2 font-semibold uppercase">
+                          {localStorage.getItem("framez_bank_acc_name") || "Framez Photobooth Enterprise"}
+                        </span>
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs font-mono">
                         <span className="text-gray-500 uppercase">Account No:</span>
-                        <span className="text-[#a1c398] col-span-2 font-bold tracking-wider text-sm select-all">
-                          5140-1234-5678
+                        <span className="text-[#a1c398] col-span-2 font-bold tracking-wider text-sm select-all font-mono">
+                          {localStorage.getItem("framez_bank_acc_no") || "5140-1234-5678"}
                         </span>
                       </div>
                     </div>
@@ -946,18 +982,27 @@ export default function WebsitePages({
                     {/* QR Payment Code Box */}
                     <div className="p-4 bg-neutral-900/50 rounded-2xl border border-white/5 flex flex-col md:flex-row items-center justify-center gap-6 text-center md:text-left">
                       <div className="w-28 h-28 bg-white p-2 rounded-xl flex flex-col items-center justify-center border border-white/20 shadow-lg relative shrink-0">
-                        {/* CSS Simulated QR code */}
-                        <div className="w-full h-full border-4 border-black relative flex flex-col justify-between p-1">
-                          <div className="flex justify-between">
-                            <div className="w-5 h-5 bg-black" />
-                            <div className="w-5 h-5 bg-black" />
+                        {localStorage.getItem("framez_bank_qr_url") ? (
+                          <img
+                            src={localStorage.getItem("framez_bank_qr_url") || ""}
+                            alt="Bank QR"
+                            className="w-full h-full object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          /* CSS Simulated QR code */
+                          <div className="w-full h-full border-4 border-black relative flex flex-col justify-between p-1">
+                            <div className="flex justify-between">
+                              <div className="w-5 h-5 bg-black" />
+                              <div className="w-5 h-5 bg-black" />
+                            </div>
+                            <div className="w-10 h-10 border-2 border-black border-dashed absolute top-8 left-8" />
+                            <div className="flex justify-between">
+                              <div className="w-5 h-5 bg-black" />
+                              <div className="w-6 h-3 bg-black self-end" />
+                            </div>
                           </div>
-                          <div className="w-10 h-10 border-2 border-black border-dashed absolute top-8 left-8" />
-                          <div className="flex justify-between">
-                            <div className="w-5 h-5 bg-black" />
-                            <div className="w-6 h-3 bg-black self-end" />
-                          </div>
-                        </div>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <span className="text-[10px] font-mono text-[#a1c398] tracking-widest uppercase font-bold block">
@@ -1109,6 +1154,25 @@ export default function WebsitePages({
                           placeholder="e.g. +6012-3456789"
                           className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
                         />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-mono text-gray-400 uppercase">Create Portal Password</label>
+                        <input
+                          type="password"
+                          required
+                          value={portalPassword}
+                          onChange={(e) => setPortalPassword(e.target.value)}
+                          placeholder="Create password for client portal"
+                          className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
+                        />
+                      </div>
+
+                      <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-400 leading-relaxed font-sans space-y-1">
+                        <span className="font-bold uppercase block tracking-wider font-mono text-[9px]">⚠️ Important Login Reminder:</span>
+                        <p>
+                          You must use this email (<strong>{clientEmail || "your-email"}</strong>) and password to log in and access your personal dashboard, track verification, or download high-resolution event photos.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1368,15 +1432,15 @@ export default function WebsitePages({
                 <div className="space-y-3.5 pt-4 text-xs font-light text-gray-400 font-sans">
                   <div className="flex items-center gap-3">
                     <Mail className="w-4.5 h-4.5 text-[#a1c398]" />
-                    <span>corporate@framez.my</span>
+                    <span>massagroup00@gmail.com</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <Phone className="w-4.5 h-4.5 text-[#a1c398]" />
-                    <span>+603-7722-1234 (Corporate Office)</span>
+                    <span>+6012-4269946 (Corporate Office)</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <MapPin className="w-4.5 h-4.5 text-[#a1c398]" />
-                    <span>Kuala Lumpur, Malaysia</span>
+                    <span>P3B-03A-19, Jalan Wan Siew Off, Jalan Sg Chua, Taman Sepakat Indah, 43000 Kajang, Selangor</span>
                   </div>
                 </div>
               </div>
@@ -1472,6 +1536,193 @@ export default function WebsitePages({
           )}
         </motion.div>
       )}
+
+      {/* Center of Contact screen social media icons for framezbooth.my */}
+      {currentSection === "contact" && (
+        <div className="mt-12 pt-8 border-t border-white/10 text-center space-y-4">
+          <span className="text-[11px] font-mono font-bold text-[#a1c398] uppercase tracking-widest block">
+            follow us and drop some love at:
+          </span>
+          <div className="flex justify-center items-center gap-8">
+            <a
+              href="https://www.instagram.com/framezbooth.my"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-1.5 text-gray-400 hover:text-white transition-colors"
+            >
+              <div className="p-3 bg-neutral-900 border border-white/5 rounded-full group-hover:border-pink-500/30 group-hover:bg-pink-500/10 transition-all duration-300">
+                <Instagram className="w-5 h-5 text-gray-400 group-hover:text-pink-500 transition-colors" />
+              </div>
+              <span className="text-[9px] font-mono tracking-wider">INSTAGRAM</span>
+            </a>
+            <a
+              href="https://www.tiktok.com/@framezbooth.my"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-1.5 text-gray-400 hover:text-white transition-colors"
+            >
+              <div className="p-3 bg-neutral-900 border border-white/5 rounded-full group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10 transition-all duration-300">
+                <svg className="w-5 h-5 text-gray-400 group-hover:text-cyan-400 transition-colors fill-current" viewBox="0 0 24 24">
+                  <path d="M12 2a10 10 0 0 0-10 10 10 10 0 0 0 10 10 10 10 0 0 0 10-10V9.5a4.5 4.5 0 0 1-3.5-1.5A5.4 5.4 0 0 0 15 5h-2v11.5a3.5 3.5 0 1 1-3.5-3.5c.3 0 .6 0 .9.1V11a5.5 5.5 0 1 0 4.6 5.4V8a6.5 6.5 0 0 0 5-5H18a4.5 4.5 0 0 1-6 4v-5z" />
+                </svg>
+              </div>
+              <span className="text-[9px] font-mono tracking-wider">TIKTOK</span>
+            </a>
+            <a
+              href="https://www.thread.com/@framezbooth.my"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-1.5 text-gray-400 hover:text-white transition-colors"
+            >
+              <div className="p-3 bg-neutral-900 border border-white/5 rounded-full group-hover:border-white/30 group-hover:bg-white/10 transition-all duration-300">
+                <svg className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm1 14.5c0 .828-.672 1.5-1.5 1.5s-1.5-.672-1.5-1.5V11c0-.828.672-1.5 1.5-1.5s1.5.672 1.5 1.5v5.5zm0-8c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1z" />
+                </svg>
+              </div>
+              <span className="text-[9px] font-mono tracking-wider">THREADS</span>
+            </a>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+interface TestimonialCarouselProps {
+  testimonials: Testimonial[];
+}
+
+function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev + 1) % testimonials.length);
+  };
+
+  const handlePrev = () => {
+    setCurrentIndex((prev) => (prev - 1 + testimonials.length) % testimonials.length);
+  };
+
+  if (!testimonials || testimonials.length === 0) {
+    return (
+      <div className="py-12 text-center text-neutral-400 font-mono text-xs">
+        No testimonials uploaded yet. Let the Developer add custom memories.
+      </div>
+    );
+  }
+
+  // Generate 3 visible cards on desktop, 1 on mobile/tablet
+  const visibleCards = [];
+  for (let i = 0; i < Math.min(3, testimonials.length); i++) {
+    const targetIdx = (currentIndex + i) % testimonials.length;
+    visibleCards.push(testimonials[targetIdx]);
+  }
+
+  return (
+    <div className="space-y-10 relative">
+      {/* Hidden Triggers to map to parent buttons */}
+      <button id="testimonial-next-trigger" className="hidden" onClick={handleNext} />
+      <button id="testimonial-prev-trigger" className="hidden" onClick={handlePrev} />
+
+      {/* Grid wrapper */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <AnimatePresence mode="popLayout">
+          {visibleCards.map((card, index) => {
+            return (
+              <motion.div
+                key={`${card.id}-${index}`}
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -50 }}
+                transition={{ type: "spring", stiffness: 100, damping: 15 }}
+                className="group flex flex-col justify-between p-8 rounded-[2rem] bg-neutral-50/50 border border-neutral-100 hover:border-neutral-200 hover:bg-neutral-50/80 transition-all duration-300 min-h-[460px] shadow-sm hover:shadow-md relative overflow-hidden"
+              >
+                {/* Visual Accent Decoration */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-neutral-100/40 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="space-y-6">
+                  {/* Top Logo */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-mono font-black text-neutral-900 tracking-wider">
+                      {card.logo || "LOGO"}
+                    </span>
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#799351]" />
+                  </div>
+
+                  {/* Word-by-word reveal quote text */}
+                  <div className="text-neutral-800 text-sm md:text-base leading-relaxed font-light font-sans italic min-h-[120px]">
+                    <WordReveal text={card.quote} />
+                  </div>
+                </div>
+
+                <div className="space-y-4 pt-6 border-t border-neutral-100/80 mt-6">
+                  {/* Author detail */}
+                  <span className="text-[11px] font-mono font-bold tracking-wider text-[#799351] block uppercase">
+                    {card.author || "- CLIENT REVIEWER"}
+                  </span>
+
+                  {/* High quality portrait frame */}
+                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200">
+                    <img
+                      src={card.imageUrl || "https://cdn.sceneai.art/Hero%20section%20image/3654d348-a98c-4320-bc14-3f458b45a50d.png"}
+                      alt="Memory Souvenir"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover transform transition-transform duration-[800ms] group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* Progress bullet indicators */}
+      <div className="flex justify-center gap-2">
+        {testimonials.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => setCurrentIndex(i)}
+            className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
+              currentIndex === i ? "bg-neutral-900 w-6" : "bg-neutral-200 hover:bg-neutral-300"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WordReveal({ text }: { text: string }) {
+  const words = text.split(" ");
+  return (
+    <motion.span
+      initial="hidden"
+      animate="visible"
+      variants={{
+        hidden: {},
+        visible: {
+          transition: {
+            staggerChildren: 0.03
+          }
+        }
+      }}
+      className="inline-block"
+    >
+      {words.map((word, index) => (
+        <motion.span
+          key={index}
+          variants={{
+            hidden: { opacity: 0, y: 5 },
+            visible: { opacity: 1, y: 0 }
+          }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="inline-block mr-1.5"
+        >
+          {word}
+        </motion.span>
+      ))}
+    </motion.span>
   );
 }
