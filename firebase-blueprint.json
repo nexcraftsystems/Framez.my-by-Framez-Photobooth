@@ -10,7 +10,10 @@
         "name": { "type": "string" },
         "role": { "type": "string", "enum": ["CLIENT", "CREW", "OWNER", "DEVELOPER", "GUEST"] },
         "accessStatus": { "type": "string" },
-        "clientBookingIds": { "type": "array" }
+        "clientBookingIds": { "type": "array" },
+        "passwordHash": { "type": "string" },
+        "passwordSalt": { "type": "string" },
+        "firstTimeLogin": { "type": "boolean" }
       },
       "required": ["id", "email", "name", "role", "accessStatus"]
     },
@@ -43,6 +46,41 @@
         "severity": { "type": "string", "enum": ["info", "warning", "alert"] }
       },
       "required": ["id", "timestamp", "actor", "action", "severity"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Unified secure coordination message logs between client, crew, and owner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "sender": { "type": "string", "enum": ["CLIENT", "CREW", "OWNER"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "isAiSuggested": { "type": "boolean" },
+        "aiSuggestedText": { "type": "string" }
+      },
+      "required": ["id", "clientId", "clientName", "sender", "text", "timestamp"]
+    },
+    "SystemNotification": {
+      "title": "SystemNotification",
+      "description": "Store real-time notifications for owners, crew, and developers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "recipientRole": { "type": "string" },
+        "targetCrewId": { "type": "string" },
+        "sender": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "type": { "type": "string" },
+        "targetRole": { "type": "string" },
+        "isReadBy": { "type": "array" }
+      },
+      "required": ["id", "title", "message", "sender", "timestamp"]
     }
   },
   "firestore": {
@@ -57,6 +95,14 @@
     "/audit_logs/{logId}": {
       "schema": "AuditLog",
       "description": "Secure append-only trace log for administrative actions"
+    },
+    "/chats/{chatId}": {
+      "schema": "ChatMessage",
+      "description": "Interactive real-time unified chat messaging collection"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "SystemNotification",
+      "description": "Interactive real-time system and broadcast notifications"
     }
   }
 }

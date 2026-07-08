@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Role, Booking, HardwareItem, CrewLead, ChatMessage, SystemAuditLog, Testimonial, InventoryLocation, InventoryItem, InventoryRequest, SystemNotification } from "./types";
 import {
   PACKAGES,
@@ -27,9 +27,51 @@ import DeveloperDashboard from "./components/DeveloperDashboard";
 import WebsitePages from "./components/WebsitePages";
 
 import { motion, AnimatePresence } from "motion/react";
+import { initializeFirestoreDb, db, addFirestoreAuditLog } from "./firebase";
+import { collection, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
 
 // Lucide icons
-import { Sparkles, Briefcase, User, ShieldAlert, Award, Calendar, Layers, ShieldCheck, Heart, Laptop, Tablet, Monitor } from "lucide-react";
+import { Sparkles, Briefcase, User, ShieldAlert, Award, Calendar, Layers, ShieldCheck, Heart, Laptop, Tablet, Monitor, Volume2, VolumeX } from "lucide-react";
+
+export function playNotificationSound() {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+    
+    // Play a high chime
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+    gain1.gain.setValueAtTime(0.15, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    
+    // Play a secondary lower chime for harmony
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(440, now + 0.05); // A4
+    osc2.frequency.exponentialRampToValueAtTime(587.33, now + 0.2); // D5
+    gain2.gain.setValueAtTime(0.1, now + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+    
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    
+    osc1.start(now);
+    osc1.stop(now + 0.6);
+    osc2.start(now + 0.05);
+    osc2.stop(now + 0.85);
+  } catch (e) {
+    console.warn("AudioContext notification failed:", e);
+  }
+}
 
 export default function App() {
   // Main session database keys (persistent with localstorage)
@@ -97,6 +139,11 @@ export default function App() {
     return saved ? JSON.parse(saved) : DEFAULT_NOTIFICATIONS;
   });
 
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem("framez_sound_enabled");
+    return saved ? saved === "true" : true;
+  });
+
   // UI state
   const [loginOpen, setLoginOpen] = useState(false);
   const [currentSection, setCurrentSection] = useState("hero");
@@ -105,10 +152,89 @@ export default function App() {
   const [screenWidth, setScreenWidth] = useState(() => (typeof window !== "undefined" ? window.innerWidth : 1024));
 
   useEffect(() => {
+    initializeFirestoreDb();
+  }, []);
+
+  useEffect(() => {
     const handleResize = () => setScreenWidth(window.innerWidth);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Save sound setting to localStorage
+  useEffect(() => {
+    localStorage.setItem("framez_sound_enabled", soundEnabled ? "true" : "false");
+  }, [soundEnabled]);
+
+  // Real-time synchronization of Bookings and Notifications with Firestore
+  useEffect(() => {
+    // 1. Sync Bookings List
+    const unsubscribeBookings = onSnapshot(collection(db, "bookings"), async (snapshot) => {
+      if (snapshot.empty) {
+        // Seed DEFAULT_BOOKINGS to Firestore
+        try {
+          const promises = DEFAULT_BOOKINGS.map(b => setDoc(doc(db, "bookings", b.id), b));
+          await Promise.all(promises);
+        } catch (err) {
+          console.error("Failed to seed default bookings to Firestore", err);
+        }
+      } else {
+        const list: Booking[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as Booking);
+        });
+        list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setBookingsList(list);
+      }
+    }, (error) => {
+      console.error("Bookings sync error:", error);
+    });
+
+    // 2. Sync Notifications List
+    const unsubscribeNotifications = onSnapshot(collection(db, "notifications"), async (snapshot) => {
+      if (snapshot.empty) {
+        // Seed DEFAULT_NOTIFICATIONS to Firestore
+        try {
+          const promises = DEFAULT_NOTIFICATIONS.map(n => setDoc(doc(db, "notifications", n.id), n));
+          await Promise.all(promises);
+        } catch (err) {
+          console.error("Failed to seed default notifications to Firestore", err);
+        }
+      } else {
+        const list: SystemNotification[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as SystemNotification);
+        });
+        list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setNotifications(list);
+      }
+    }, (error) => {
+      console.error("Notifications sync error:", error);
+    });
+
+    return () => {
+      unsubscribeBookings();
+      unsubscribeNotifications();
+    };
+  }, []);
+
+  // Play sound when a new notification is added
+  const prevNotifCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (notifications.length > 0) {
+      if (prevNotifCountRef.current !== null && notifications.length > prevNotifCountRef.current) {
+        // A new notification was added! Play sound if enabled and the notification is very recent
+        const newest = notifications[0]; // notifications are sorted newest first
+        const ageMs = Date.now() - new Date(newest.timestamp).getTime();
+        if (soundEnabled && ageMs < 10000) {
+          playNotificationSound();
+        }
+      }
+      prevNotifCountRef.current = notifications.length;
+    } else if (prevNotifCountRef.current === null) {
+      prevNotifCountRef.current = 0;
+    }
+  }, [notifications, soundEnabled]);
 
   // Sync back to localstorage on change
   useEffect(() => {
@@ -127,49 +253,101 @@ export default function App() {
     localStorage.setItem("framez_notifications", JSON.stringify(notifications));
   }, [activeRole, userEmail, bookingsList, hardwareList, crewLeads, chatMessages, auditLogs, isCalendarSynced, testimonialsList, locations, inventory, inventoryRequests, notifications]);
 
-  // Database mutations helpers
-  const handleNewBooking = (newBooking: Booking) => {
-    setBookingsList((prev) => [newBooking, ...prev]);
-    addAuditLog(
-      "Client User",
-      `Initiated Pre-Booking slot on ${newBooking.date} with ${newBooking.packageName}`,
-      "info"
-    );
-  };
+  // Database mutations helpers with Firestore persistence
+  const handleNewBooking = async (newBooking: Booking) => {
+    try {
+      // 1. Write booking to Firestore
+      await setDoc(doc(db, "bookings", newBooking.id), newBooking);
+      
+      // 2. Add an audit log in Firestore
+      await addFirestoreAuditLog(
+        "Client User",
+        `Initiated Pre-Booking slot on ${newBooking.date} with ${newBooking.packageName}`,
+        "info"
+      );
 
-  const handleApproveReceipt = (bookingId: string) => {
-    setBookingsList((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, status: "BOOKED", receiptApproved: true, rejectionReason: undefined } : b))
-    );
-  };
-
-  const handleRejectReceipt = (bookingId: string, reason: string) => {
-    setBookingsList((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, status: "REJECTED", receiptApproved: false, rejectionReason: reason } : b))
-    );
-  };
-
-  const handleAssignCrew = (bookingId: string, crewId: string, isSecond?: boolean) => {
-    setBookingsList((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, [isSecond ? "crewLeadId2" : "crewLeadId"]: crewId } : b))
-    );
-    const crewName = crewLeads.find((c) => c.id === crewId)?.name || "Unassigned";
-    addAuditLog("Irfan (Co-Founder)", `Assigned Crew Coordinator ${crewName} as Person In-charge ${isSecond ? "2" : "1"} to booking reference ${bookingId}.`, "info");
-
-    if (crewId) {
-      const b = bookingsList.find(book => book.id === bookingId);
+      // 3. Create a notification for OWNER only
+      const notifId = "notif_order_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
       const newNotif: SystemNotification = {
-        id: "notif_assign_" + Math.random().toString(36).substring(2, 9),
-        title: "📋 New Event Assigned!",
-        message: `You have been assigned as Person In-charge ${isSecond ? "2" : "1"} for ${b?.clientName || "Client"}'s ${b?.packageName || "photobooth"} event on ${b?.date || "TBD"}. Venue: ${b?.locationAddress || "Specified venue"}.`,
-        recipientRole: "PERSONAL_CREW",
-        targetCrewId: crewId,
-        sender: "System Coordinator",
+        id: notifId,
+        title: "🛍️ New Photo Booth Order!",
+        message: `${newBooking.clientName} placed a new pre-booking for ${newBooking.packageName} on ${newBooking.date}. Amount: RM ${newBooking.totalPrice}.`,
+        recipientRole: "OWNER",
+        targetRole: "OWNER",
+        sender: "System Booking Engine",
         timestamp: new Date().toISOString(),
-        isRead: false,
-        type: "TASK"
+        isReadBy: [],
+        type: "INFO"
       };
-      setNotifications(prev => [newNotif, ...prev]);
+      await setDoc(doc(db, "notifications", notifId), newNotif);
+    } catch (err) {
+      console.error("Failed to add new booking to Firestore:", err);
+    }
+  };
+
+  const handleApproveReceipt = async (bookingId: string) => {
+    const booking = bookingsList.find((b) => b.id === bookingId);
+    if (!booking) return;
+    const updated = { ...booking, status: "BOOKED" as const, receiptApproved: true, rejectionReason: undefined };
+    try {
+      await setDoc(doc(db, "bookings", bookingId), updated);
+      await addFirestoreAuditLog(
+        "Irfan (Co-Founder)",
+        `Approved payment receipt for booking reference ${bookingId}.`,
+        "info"
+      );
+    } catch (err) {
+      console.error("Failed to approve receipt in Firestore:", err);
+    }
+  };
+
+  const handleRejectReceipt = async (bookingId: string, reason: string) => {
+    const booking = bookingsList.find((b) => b.id === bookingId);
+    if (!booking) return;
+    const updated = { ...booking, status: "REJECTED" as const, receiptApproved: false, rejectionReason: reason };
+    try {
+      await setDoc(doc(db, "bookings", bookingId), updated);
+      await addFirestoreAuditLog(
+        "Irfan (Co-Founder)",
+        `Rejected payment receipt for booking reference ${bookingId}. Reason: ${reason}`,
+        "warning"
+      );
+    } catch (err) {
+      console.error("Failed to reject receipt in Firestore:", err);
+    }
+  };
+
+  const handleAssignCrew = async (bookingId: string, crewId: string, isSecond?: boolean) => {
+    const booking = bookingsList.find((b) => b.id === bookingId);
+    if (!booking) return;
+    const updated = { ...booking, [isSecond ? "crewLeadId2" : "crewLeadId"]: crewId };
+    try {
+      await setDoc(doc(db, "bookings", bookingId), updated);
+      
+      const crewName = crewLeads.find((c) => c.id === crewId)?.name || "Unassigned";
+      await addFirestoreAuditLog(
+        "Irfan (Co-Founder)",
+        `Assigned Crew Coordinator ${crewName} as Person In-charge ${isSecond ? "2" : "1"} to booking reference ${bookingId}.`,
+        "info"
+      );
+
+      if (crewId) {
+        const notifId = "notif_assign_" + Math.random().toString(36).substring(2, 9);
+        const newNotif: SystemNotification = {
+          id: notifId,
+          title: "📋 New Event Assigned!",
+          message: `You have been assigned as Person In-charge ${isSecond ? "2" : "1"} for ${booking.clientName}'s ${booking.packageName} event on ${booking.date}. Venue: ${booking.locationAddress || "Specified venue"}.`,
+          recipientRole: "PERSONAL_CREW",
+          targetCrewId: crewId,
+          sender: "System Coordinator",
+          timestamp: new Date().toISOString(),
+          isReadBy: [],
+          type: "TASK"
+        };
+        await setDoc(doc(db, "notifications", notifId), newNotif);
+      }
+    } catch (err) {
+      console.error("Failed to assign crew in Firestore:", err);
     }
   };
 
@@ -208,18 +386,90 @@ export default function App() {
     setAuditLogs((prev) => [newLog, ...prev]);
   };
 
-  // Reset database state
-  const handleResetDatabase = () => {
-    if (confirm("Reset local storage database to system defaults? All new logs, bookings, and chats will be cleared.")) {
+  // Reset database state in Firestore and local
+  const handleResetDatabase = async () => {
+    try {
       localStorage.clear();
-      setBookingsList(DEFAULT_BOOKINGS);
+      
+      const bookingsSnap = await getDocs(collection(db, "bookings"));
+      for (const d of bookingsSnap.docs) {
+        await deleteDoc(doc(db, "bookings", d.id));
+      }
+      for (const b of DEFAULT_BOOKINGS) {
+        await setDoc(doc(db, "bookings", b.id), b);
+      }
+
+      const notificationsSnap = await getDocs(collection(db, "notifications"));
+      for (const d of notificationsSnap.docs) {
+        await deleteDoc(doc(db, "notifications", d.id));
+      }
+      for (const n of DEFAULT_NOTIFICATIONS) {
+        await setDoc(doc(db, "notifications", n.id), n);
+      }
+
       setHardwareList(DEFAULT_HARDWARE);
       setCrewLeads(DEFAULT_CREW);
       setChatMessages(DEFAULT_CHATS);
       setAuditLogs(DEFAULT_AUDIT_LOGS);
       setActiveRole("GUEST");
       setUserEmail("guest@framez.my");
-      alert("Local storage successfully refreshed.");
+      alert("System database and default collections have been successfully refreshed.");
+    } catch (err) {
+      console.error("Failed to reset database:", err);
+      alert("Failed to reset database: " + err);
+    }
+  };
+
+  // State update interceptors for dashboards
+  const handleUpdateBookings = async (
+    updater: React.SetStateAction<Booking[]>
+  ) => {
+    let newList: Booking[] = [];
+    if (typeof updater === "function") {
+      newList = (updater as any)(bookingsList);
+    } else {
+      newList = updater;
+    }
+
+    try {
+      // Find deleted ones
+      for (const b of bookingsList) {
+        const stillExists = newList.find(item => item.id === b.id);
+        if (!stillExists) {
+          await deleteDoc(doc(db, "bookings", b.id));
+        }
+      }
+      // Find added or modified ones
+      for (const b of newList) {
+        const existing = bookingsList.find(item => item.id === b.id);
+        if (!existing || JSON.stringify(existing) !== JSON.stringify(b)) {
+          await setDoc(doc(db, "bookings", b.id), b);
+        }
+      }
+    } catch (err) {
+      console.error("Error saving booking to Firestore:", err);
+    }
+  };
+
+  const handleUpdateNotifications = async (
+    updater: React.SetStateAction<SystemNotification[]>
+  ) => {
+    let newList: SystemNotification[] = [];
+    if (typeof updater === "function") {
+      newList = (updater as any)(notifications);
+    } else {
+      newList = updater;
+    }
+
+    try {
+      for (const n of newList) {
+        const existing = notifications.find(item => item.id === n.id);
+        if (!existing || JSON.stringify(existing) !== JSON.stringify(n)) {
+          await setDoc(doc(db, "notifications", n.id), n);
+        }
+      }
+    } catch (err) {
+      console.error("Error saving notification to Firestore:", err);
     }
   };
 
@@ -272,6 +522,8 @@ export default function App() {
         }}
         onNavigateSection={setCurrentSection}
         currentSection={currentSection}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled(!soundEnabled)}
       />
 
       {/* 2. MAIN WEBSITE CONTENT SECTION or PORTAL ACCESS WORKSPACE */}
@@ -367,7 +619,7 @@ export default function App() {
                 role={activeRole}
                 onAddAuditLog={addAuditLog}
                 onUpdateBooking={(updated) => {
-                  setBookingsList((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+                  handleUpdateBookings((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
                 }}
               />
             )}
@@ -390,87 +642,39 @@ export default function App() {
                 inventoryRequests={inventoryRequests}
                 onUpdateRequests={setInventoryRequests}
                 notifications={notifications}
-                onUpdateNotifications={setNotifications}
+                onUpdateNotifications={handleUpdateNotifications}
               />
             )}
 
             {(activeRole === "OWNER" || activeRole === "DEVELOPER") && (
-              screenWidth < 768 ? (
-                <div className="bg-neutral-900/80 border border-white/10 rounded-[2rem] p-6 sm:p-8 text-center backdrop-blur-md max-w-md mx-auto my-6 space-y-6">
-                  <div className="mx-auto w-16 h-16 rounded-full bg-amber-950/40 border border-amber-500/30 flex items-center justify-center text-amber-500 animate-pulse">
-                    <ShieldAlert className="w-8 h-8" />
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="text-base font-bold font-display uppercase tracking-widest text-white">
-                      Device Restricted
-                    </h3>
-                    <p className="text-[10px] text-gray-400 font-mono font-bold text-amber-500 uppercase tracking-wider">
-                      Mobile Access Protocol Blocked
-                    </p>
-                  </div>
-                  <p className="text-xs text-gray-300 leading-relaxed font-light">
-                    For operational security and spreadsheet layout fidelity, the <strong>{activeRole} Control Center</strong> is strictly restricted to computers, laptops, or iPad/tablet displays.
-                  </p>
-                  <div className="p-4 bg-black/40 border border-white/5 rounded-2xl text-left space-y-2 text-[11px] text-gray-400">
-                    <span className="font-bold text-white block uppercase text-[9px] tracking-widest font-mono mb-1">
-                      Approved Displays (768px+):
-                    </span>
-                    <div className="flex items-center gap-2.5">
-                      <Tablet className="w-4 h-4 text-emerald-500" />
-                      <span>iPad & Android Tablets</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <Laptop className="w-4 h-4 text-emerald-500" />
-                      <span>MacBooks & Windows Laptops</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <Monitor className="w-4 h-4 text-emerald-500" />
-                      <span>Wide iMac & Desktop Monitors</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <button
-                      onClick={() => {
-                        setActiveRole("GUEST");
-                        setUserEmail("guest@framez.my");
-                        addAuditLog("System", `Logged out of restricted ${activeRole} mobile session.`, "info");
-                      }}
-                      className="w-full py-2.5 bg-[#799351] hover:bg-[#5f743e] text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
-                    >
-                      Exit Console
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <OwnerDashboard
-                  bookingsList={bookingsList}
-                  hardwareList={hardwareList}
-                  crewLeads={crewLeads}
-                  chatMessages={chatMessages}
-                  auditLogs={auditLogs}
-                  onApproveReceipt={handleApproveReceipt}
-                  onRejectReceipt={handleRejectReceipt}
-                  onAssignCrew={handleAssignCrew}
-                  onSendMessage={handleSendMessage}
-                  onAddAuditLog={addAuditLog}
-                  role={activeRole}
-                  onResetDatabase={handleResetDatabase}
-                  onSimulateInboundInquiry={handleSimulateInboundInquiry}
-                  isCalendarSynced={isCalendarSynced}
-                  onToggleCalendarSync={() => setIsCalendarSynced(!isCalendarSynced)}
-                  testimonialsList={testimonialsList}
-                  onUpdateTestimonials={setTestimonialsList}
-                  locations={locations}
-                  onUpdateLocations={setLocations}
-                  inventory={inventory}
-                  onUpdateInventory={setInventory}
-                  inventoryRequests={inventoryRequests}
-                  onUpdateRequests={setInventoryRequests}
-                  notifications={notifications}
-                  onUpdateNotifications={setNotifications}
-                  onUpdateBookings={setBookingsList}
-                />
-              )
+              <OwnerDashboard
+                bookingsList={bookingsList}
+                hardwareList={hardwareList}
+                crewLeads={crewLeads}
+                chatMessages={chatMessages}
+                auditLogs={auditLogs}
+                onApproveReceipt={handleApproveReceipt}
+                onRejectReceipt={handleRejectReceipt}
+                onAssignCrew={handleAssignCrew}
+                onSendMessage={handleSendMessage}
+                onAddAuditLog={addAuditLog}
+                role={activeRole}
+                onResetDatabase={handleResetDatabase}
+                onSimulateInboundInquiry={handleSimulateInboundInquiry}
+                isCalendarSynced={isCalendarSynced}
+                onToggleCalendarSync={() => setIsCalendarSynced(!isCalendarSynced)}
+                testimonialsList={testimonialsList}
+                onUpdateTestimonials={setTestimonialsList}
+                locations={locations}
+                onUpdateLocations={setLocations}
+                inventory={inventory}
+                onUpdateInventory={setInventory}
+                inventoryRequests={inventoryRequests}
+                onUpdateRequests={setInventoryRequests}
+                notifications={notifications}
+                onUpdateNotifications={handleUpdateNotifications}
+                onUpdateBookings={handleUpdateBookings}
+              />
             )}
 
           </div>

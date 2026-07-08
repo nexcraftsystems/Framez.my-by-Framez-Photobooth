@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Booking, HardwareItem, CrewLead, ChatMessage, SystemAuditLog, Role, Testimonial, InventoryLocation, InventoryItem, InventoryRequest, SystemNotification } from "../types";
 import PrintableReceipt from "./PrintableReceipt";
 import InventoryManager from "./InventoryManager";
@@ -35,8 +35,13 @@ import {
   ChevronRight,
   Bell,
   Package,
-  QrCode
+  QrCode,
+  Image as ImageIcon,
+  AlertCircle,
+  ExternalLink
 } from "lucide-react";
+import { collection, doc, setDoc, query, where, onSnapshot, deleteDoc, getDocs, writeBatch } from "firebase/firestore";
+import { db, handleFirestoreError, OperationType } from "../firebase";
 import { 
   ResponsiveContainer, 
   LineChart, 
@@ -150,10 +155,10 @@ export default function OwnerDashboard({
     
     // Default mock accounts
     return [
-      { id: "acc_1", email: "nexcraftsystems@gmail.com", name: "Siti Aminah", role: "CLIENT", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: ["b1"] },
+      { id: "acc_1", email: "siti@gmail.com", name: "Siti Aminah", role: "CLIENT", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: ["b1"] },
       { id: "acc_2", email: "crew@framez.my", name: "Zack Crew lead", role: "CREW", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
       { id: "acc_3", email: "irfan@framez.my", name: "Irfan (Co-Founder)", role: "OWNER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
-      { id: "acc_4", email: "dev@framez.my", name: "Developer Superuser", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
+      { id: "acc_4", email: "nexcraftsystems@gmail.com", name: "Developer Superuser", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
       { id: "acc_5", email: "zack@framez.my", name: "Zack Coordinator", role: "CREW", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
     ];
   });
@@ -171,6 +176,67 @@ export default function OwnerDashboard({
   const [testiAuthor, setTestiAuthor] = useState("");
   const [testiImageUrl, setTestiImageUrl] = useState("");
 
+  // Custom dialog state for elegant iframe-safe alerts, confirms, and prompts
+  const [customDialog, setCustomDialog] = useState<{
+    isOpen: boolean;
+    type: "alert" | "confirm" | "prompt";
+    title: string;
+    message: string;
+    placeholder?: string;
+    defaultValue?: string;
+    onConfirm: (inputValue?: string) => void;
+    onCancel?: () => void;
+  } | null>(null);
+
+  const triggerCustomAlert = (title: string, message: string, onConfirm?: () => void) => {
+    setCustomDialog({
+      isOpen: true,
+      type: "alert",
+      title,
+      message,
+      onConfirm: () => {
+        setCustomDialog(null);
+        if (onConfirm) onConfirm();
+      }
+    });
+  };
+
+  const triggerCustomConfirm = (title: string, message: string, onConfirm: () => void, onCancel?: () => void) => {
+    setCustomDialog({
+      isOpen: true,
+      type: "confirm",
+      title,
+      message,
+      onConfirm: () => {
+        setCustomDialog(null);
+        onConfirm();
+      },
+      onCancel: () => {
+        setCustomDialog(null);
+        if (onCancel) onCancel();
+      }
+    });
+  };
+
+  const triggerCustomPrompt = (title: string, message: string, placeholder: string, defaultValue: string, onConfirm: (val: string) => void, onCancel?: () => void) => {
+    setCustomDialog({
+      isOpen: true,
+      type: "prompt",
+      title,
+      message,
+      placeholder,
+      defaultValue,
+      onConfirm: (val) => {
+        setCustomDialog(null);
+        onConfirm(val || "");
+      },
+      onCancel: () => {
+        setCustomDialog(null);
+        if (onCancel) onCancel();
+      }
+    });
+  };
+
   useEffect(() => {
     localStorage.setItem("framez_gsso_accounts", JSON.stringify(googleAccounts));
   }, [googleAccounts]);
@@ -186,33 +252,96 @@ export default function OwnerDashboard({
     ? Math.round(totalSalesRevenue / approvedBookings.length) 
     : 649;
 
+  // Real-time Firestore synchronized chats state
+  const [firestoreChats, setFirestoreChats] = useState<ChatMessage[]>([]);
+  const [chatFileUrl, setChatFileUrl] = useState<string | null>(null);
+  const [chatFileName, setChatFileName] = useState<string | null>(null);
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const chatsRef = collection(db, "chats");
+    const unsubscribe = onSnapshot(chatsRef, (snapshot) => {
+      const msgs: ChatMessage[] = [];
+      snapshot.forEach((doc) => {
+        msgs.push(doc.data() as ChatMessage);
+      });
+      // Sort chronologically
+      msgs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      setFirestoreChats(msgs);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, "chats");
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Active chat details
-  const activeChats = chatMessages.filter((m) => m.clientId === activeChatClientId);
+  const activeChats = firestoreChats.filter((m) => m.clientId === activeChatClientId);
   const currentClientBooking = bookingsList.find((b) => b.id === activeChatClientId);
 
-  // Group WhatsApp chat clients
-  const uniqueClients = Array.from(new Set(chatMessages.map((c) => c.clientId))).map((id) => {
-    const lastChat = chatMessages.filter((m) => m.clientId === id).slice(-1)[0];
+  // Group chats by unique client booking IDs
+  const uniqueClients = Array.from(new Set([
+    ...bookingsList.map((b) => b.id),
+    ...firestoreChats.map((c) => c.clientId)
+  ])).map((id) => {
+    const lastChat = firestoreChats.filter((m) => m.clientId === id).slice(-1)[0];
+    const booking = bookingsList.find((b) => b.id === id);
     return {
       id,
-      clientName: bookingsList.find((b) => b.id === id)?.clientName || lastChat?.clientName || "Client Inquiry",
-      lastMessage: lastChat?.text || "",
+      clientName: booking?.clientName || lastChat?.clientName || `Inquiry ${id}`,
+      lastMessage: lastChat?.text || "No message history yet",
       timestamp: lastChat?.timestamp || "",
     };
-  });
+  }).filter(c => c.id !== "general" && c.clientName !== "general");
 
-  const handleSendMessageSubmit = (e: React.FormEvent) => {
+  const handleSendMessageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!typedMessage.trim()) return;
+    if (!typedMessage.trim() && !chatFileUrl) return;
 
-    onSendMessage(activeChatClientId, typedMessage, "OWNER");
-    onAddAuditLog(
-      "Irfan (Owner)",
-      `Replied to ${currentClientBooking?.clientName || "Client"} via WhatsApp CRM`,
-      "info"
-    );
-    setTypedMessage("");
-    setAiGeneratedText("");
+    const msgId = "msg_" + Math.random().toString(36).substr(2, 9);
+    
+    // Cross-profile actor mapping
+    let senderName = "IRFAN (CO-FOUNDER)";
+    let senderRole: "OWNER" | "CREW" | "CLIENT" = "OWNER";
+
+    if (role === "DEVELOPER") {
+      senderName = "DEVELOPER SU";
+      senderRole = "OWNER"; // Map to Owner style for balloon bubbles
+    } else if (role === "CREW") {
+      senderName = "CREW PIC";
+      senderRole = "CREW";
+    }
+
+    const newMsg: ChatMessage = {
+      id: msgId,
+      clientId: activeChatClientId,
+      clientName: senderName,
+      sender: senderRole,
+      text: typedMessage.trim() + (chatFileUrl ? `\n[Shared File: ${chatFileName}]` : ""),
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, "chats", msgId), newMsg);
+      onAddAuditLog(
+        role === "DEVELOPER" ? "Developer Admin" : "Owner Portal",
+        `Sent secure coordination reply to ${currentClientBooking?.clientName || "Client"} via Chat Coordination Hub`,
+        "info"
+      );
+      setTypedMessage("");
+      setChatFileUrl(null);
+      setChatFileName(null);
+    } catch (err) {
+      console.error("Failed to send Firestore chat", err);
+    }
+  };
+
+  const handleChatFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setChatFileName(file.name);
+      // Simulate file upload with object URL or background asset
+      setChatFileUrl("https://cdn.sceneai.art/backgrounds/e102a51c-c095-492e-b909-72bb753f83a2.mov");
+    }
   };
 
   // Simulated AI response via server route or mock fallback
@@ -388,6 +517,167 @@ export default function OwnerDashboard({
     );
   };
 
+  // Developer Only: Delete user account with cascade deletions
+  const handleDeleteUser = async (userEmail: string, userName: string) => {
+    if (userEmail === "nexcraftsystems@gmail.com") {
+      triggerCustomAlert(
+        "Operational Block",
+        "❌ Operational Block: You are currently signed in as this developer and cannot delete your own session credentials."
+      );
+      return;
+    }
+
+    triggerCustomConfirm(
+      "DEVELOPER CASCADE DELETION PROTOCOL",
+      `Are you absolutely sure you want to permanently delete the user account "${userName}" (${userEmail})?\n\nCRITICAL WARNING: This will immediately delete:\n1. The GSSO Account Credential.\n2. ALL of their bookings under this email address.\n3. ALL associated chat transcripts, files, and progress logs.\n\nThis action is final and CANNOT be reversed.`,
+      async () => {
+        try {
+          // Find associated bookings
+          const bookingsToRemove = bookingsList.filter(b => b.clientEmail.toLowerCase() === userEmail.toLowerCase());
+          const bookingIds = bookingsToRemove.map(b => b.id);
+
+          // Delete from Firestore 'accounts'
+          const accountsQuery = query(collection(db, "accounts"), where("email", "==", userEmail));
+          const accountsSnap = await getDocs(accountsQuery);
+          const batch1 = writeBatch(db);
+          accountsSnap.forEach((doc) => {
+            batch1.delete(doc.ref);
+          });
+          await batch1.commit();
+
+          // Delete associated bookings from Firestore
+          const batch2 = writeBatch(db);
+          for (const bid of bookingIds) {
+            batch2.delete(doc(db, "bookings", bid));
+          }
+          await batch2.commit();
+
+          // Delete associated chats from Firestore
+          const chatsRef = collection(db, "chats");
+          const batch3 = writeBatch(db);
+          for (const bid of bookingIds) {
+            const chatsQuery = query(chatsRef, where("clientId", "==", bid));
+            const chatsSnap = await getDocs(chatsQuery);
+            chatsSnap.forEach((doc) => {
+              batch3.delete(doc.ref);
+            });
+          }
+          await batch3.commit();
+
+          // Update local React states
+          setGoogleAccounts(prev => prev.filter(acc => acc.email.toLowerCase() !== userEmail.toLowerCase()));
+          if (onUpdateBookings) {
+            onUpdateBookings(prev => prev.filter(b => b.clientEmail.toLowerCase() !== userEmail.toLowerCase()));
+          }
+
+          // Audit Log
+          onAddAuditLog(
+            "Developer Superuser",
+            `Executed Deep Cascade Deletion of user "${userName}" (${userEmail}), purging ${bookingsToRemove.length} bookings and all associated chats.`,
+            "alert"
+          );
+
+          // Display detailed Popup Receipt
+          triggerCustomAlert(
+            "DEEP CASCADE DELETION RECEIPT",
+            `🚨 DEEP CASCADE DELETION RECEIPT:\n-------------------------------------\nAction: Cascade Profile Purge\nUser: ${userName} (${userEmail})\nBookings Purged: ${bookingsToRemove.length}\nChats Purged: COMPLETE\n-------------------------------------\nStatus: CASCADE SYSTEM PURGE COMPLETED`
+          );
+        } catch (err) {
+          console.error("Failed to execute cascade deletion:", err);
+          triggerCustomAlert("Error", "❌ Error: Deep cascade purge failed. Verify database rules.");
+        }
+      }
+    );
+  };
+
+  // Developer Only: Delete Specific Booking
+  const handleDeleteBooking = async (bookingId: string) => {
+    const booking = bookingsList.find(b => b.id === bookingId);
+    if (!booking) return;
+
+    triggerCustomConfirm(
+      "DEVELOPER DELETION PROTOCOL",
+      `Are you absolutely sure you want to permanently delete the booking date of "${booking.clientName}" on ${booking.date}?\nThis will completely purge this event from active databases and invoices.`,
+      async () => {
+        try {
+          // 1. Delete from Firestore if exists
+          await deleteDoc(doc(db, "bookings", bookingId));
+          
+          // 2. Delete related Chats
+          const chatsQuery = query(collection(db, "chats"), where("clientId", "==", bookingId));
+          const chatsSnap = await getDocs(chatsQuery);
+          const batch = writeBatch(db);
+          chatsSnap.forEach((doc) => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+
+          // 3. Update local React State
+          if (onUpdateBookings) {
+            onUpdateBookings(prev => prev.filter(b => b.id !== bookingId));
+          }
+
+          // 4. Log Audit
+          onAddAuditLog(
+            "Developer Superuser",
+            `Permanently deleted booking date references and chats for client "${booking.clientName}" (${booking.date}).`,
+            "alert"
+          );
+
+          // 5. Success confirmation dialog receipt
+          triggerCustomAlert(
+            "PURGED SUCCESSFULLY",
+            `Status: PURGED SUCCESSFULLY\n-------------------------------------\nClient: ${booking.clientName}\nDate: ${booking.date}\nAction: Booking Deletion\n-------------------------------------\nAll database dependencies and local caches have been destroyed.`
+          );
+        } catch (err) {
+          console.error("Failed to delete booking:", err);
+          triggerCustomAlert("Error", "❌ Error: Failed to purge database records. Please verify Firestore access.");
+        }
+      }
+    );
+  };
+
+  // Developer Only: Root Database Reset and Purge
+  const handleDeleteDatabase = async () => {
+    if (role !== "DEVELOPER") {
+      triggerCustomAlert(
+        "Security Alert",
+        "❌ Security Alert: Database deletion is strictly restricted to authorized System Developers."
+      );
+      return;
+    }
+
+    triggerCustomConfirm(
+      "DANGER: ROOT DATABASE DELETION PROTOCOL",
+      `Are you absolutely sure you want to completely PURGE and RESET the entire Firestore database and local cache?\n\nThis will permanently delete:\n- All event bookings\n- All customer chat history\n- All system logs\n- All custom client profiles\n\nDefault developer and crew credentials will be re-seeded automatically.\nThis action is irreversible.`,
+      async () => {
+        try {
+          // Reset Firestore Database
+          const { resetEntireFirestoreDb } = await import("../firebase");
+          await resetEntireFirestoreDb();
+
+          // Clear Local Storage
+          localStorage.clear();
+
+          // Inform audit
+          onAddAuditLog("Developer Superuser", "Initiated root master database deletion and fresh environment seed.", "alert");
+
+          // Show popup receipt
+          triggerCustomAlert(
+            "MASTER DATABASE DELETED SUCCESSFULLY",
+            `🚨 MASTER DATABASE DELETED SUCCESSFULLY 🚨\n-------------------------------------\nAction: root db:purge:reset\nScope: Firestore + Local Cache\nTables Wiped: BOOKINGS, CHATS, ACCOUNTS, AUDIT_LOGS\nStatus: SEEDED WITH NEW DEFAULT PROFILES\n-------------------------------------\nApp will now reload.`,
+            () => {
+              window.location.reload();
+            }
+          );
+        } catch (err) {
+          console.error("Database deletion failed:", err);
+          triggerCustomAlert("Deletion Failed", "❌ Deletion Failed: Connection issues or database permission blocks.");
+        }
+      }
+    );
+  };
+
   // Developer Only: Testimonials customizers
   const handleSaveTestimonial = (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,11 +722,15 @@ export default function OwnerDashboard({
   };
 
   const handleDeleteTestimonial = (id: string) => {
-    if (confirm("Are you sure you want to delete this testimonial?")) {
-      const filtered = testimonialsList.filter(t => t.id !== id);
-      onUpdateTestimonials(filtered);
-      onAddAuditLog("Developer", `Deleted testimonial card ID: ${id}`, "alert");
-    }
+    triggerCustomConfirm(
+      "DELETE TESTIMONIAL",
+      "Are you sure you want to permanently delete this testimonial memory card from the live customer feedback wall?",
+      () => {
+        const filtered = testimonialsList.filter(t => t.id !== id);
+        onUpdateTestimonials(filtered);
+        onAddAuditLog("Developer", `Deleted testimonial card ID: ${id}`, "alert");
+      }
+    );
   };
 
   // Developer Only: Edit Client Access
@@ -499,7 +793,7 @@ export default function OwnerDashboard({
               { id: "dashboard", label: "Executive Metrics", icon: BarChart3 },
               { id: "spreadsheet", label: "Clients Progress", icon: FileText },
               { id: "calendar", label: "Master Calendar", icon: CalendarIcon },
-              { id: "crm", label: "AI WhatsApp CRM", icon: MessageSquare },
+              { id: "crm", label: "CHAT COORDINATION HUB", icon: MessageSquare },
               { id: "receipts", label: "Receipt Invoices", icon: Clipboard },
               { id: "performance", label: "Crew Performance", icon: Award },
               { id: "inventory", label: "Central Inventory", icon: Package },
@@ -823,12 +1117,13 @@ export default function OwnerDashboard({
                     <th className="p-2.5 text-center">Duration</th>
                     <th className="p-2.5 text-right">Price</th>
                     <th className="p-2.5 text-center">Progress</th>
+                    {role === "DEVELOPER" && <th className="p-2.5 text-center">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredBookings.filter(b => b.status !== "BOOKED").length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-6 text-center text-gray-500 font-light">
+                      <td colSpan={role === "DEVELOPER" ? 9 : 8} className="p-6 text-center text-gray-500 font-light">
                         No pending coordinates at this time. All active items approved below.
                       </td>
                     </tr>
@@ -901,6 +1196,17 @@ export default function OwnerDashboard({
                               </button>
                             </div>
                           </td>
+                          {role === "DEVELOPER" && (
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBooking(b.id)}
+                                className="px-2.5 py-0.5 bg-red-950/40 hover:bg-red-900/40 border border-red-500/20 text-red-400 rounded text-[9px] font-mono font-bold uppercase transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -930,12 +1236,13 @@ export default function OwnerDashboard({
                     <th className="p-2.5 text-right">Price</th>
                     <th className="p-2.5 text-center font-mono">Status</th>
                     <th className="p-2.5 text-center font-mono">2nd Payment Status</th>
+                    {role === "DEVELOPER" && <th className="p-2.5 text-center font-mono">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredBookings.filter(b => b.status === "BOOKED").length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-6 text-center text-gray-500 font-light">
+                      <td colSpan={role === "DEVELOPER" ? 10 : 9} className="p-6 text-center text-gray-500 font-light">
                         No approved bookings yet. Verify client deposit slips above.
                       </td>
                     </tr>
@@ -963,6 +1270,7 @@ export default function OwnerDashboard({
                               </select>
                               {b.crewLeadId && (
                                 <button
+                                  type="button"
                                   onClick={() => handlePushNotificationToCrew(b.id, b.crewLeadId!, false)}
                                   title="Send push alert to crew 1"
                                   className="px-1.5 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 rounded text-[9px] font-mono font-bold"
@@ -986,6 +1294,7 @@ export default function OwnerDashboard({
                               </select>
                               {b.crewLeadId2 && (
                                 <button
+                                  type="button"
                                   onClick={() => handlePushNotificationToCrew(b.id, b.crewLeadId2!, true)}
                                   title="Send push alert to crew 2"
                                   className="px-1.5 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 rounded text-[9px] font-mono font-bold"
@@ -1026,6 +1335,7 @@ export default function OwnerDashboard({
                                       Slip ↗
                                     </a>
                                     <button
+                                      type="button"
                                       onClick={() => {
                                         if (onUpdateBookings) {
                                           onUpdateBookings((prev) =>
@@ -1054,7 +1364,7 @@ export default function OwnerDashboard({
                                             };
                                             onUpdateNotifications(prev => [newNotif, ...prev]);
                                           }
-                                          alert(`🏦 Approved 2nd & final payment for ${b.clientName}!`);
+                                          triggerCustomAlert("Deposit Verified", `🏦 Approved 2nd & final payment for ${b.clientName}!`);
                                         }
                                       }}
                                       className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-neutral-950 text-[8px] font-mono rounded font-bold"
@@ -1062,41 +1372,50 @@ export default function OwnerDashboard({
                                       Approve
                                     </button>
                                     <button
+                                      type="button"
                                       onClick={() => {
-                                        const reason = prompt("Enter 2nd payment rejection reason:") || "Receipt scan is illegible.";
-                                        if (reason && onUpdateBookings) {
-                                          onUpdateBookings((prev) =>
-                                            prev.map((item) =>
-                                              item.id === b.id
-                                                ? {
-                                                    ...item,
-                                                    secondPaymentRejected: true,
-                                                    secondPaymentRejectionReason: reason,
-                                                    secondReceiptUrl: undefined,
-                                                  }
-                                                : item
-                                            )
-                                          );
-                                          onAddAuditLog(
-                                            role === "DEVELOPER" ? "Developer Admin" : "Irfan (Owner)",
-                                            `Rejected the 2nd payment receipt for ${b.clientName}'s event. Reason: ${reason}`,
-                                            "warning"
-                                          );
-                                          
-                                          if (onUpdateNotifications) {
-                                            const newNotif = {
-                                              id: "n_rejected_" + Date.now(),
-                                              title: `2nd Payment REJECTED for ${b.clientName}`,
-                                              message: `Rejection reason: ${reason}. Requested re-upload of transaction proof.`,
-                                              timestamp: new Date().toLocaleTimeString(),
-                                              type: "booking" as const,
-                                              severity: "warning" as const,
-                                              isRead: false
-                                            };
-                                            onUpdateNotifications(prev => [newNotif, ...prev]);
+                                        triggerCustomPrompt(
+                                          "REJECT 2nd PAYMENT",
+                                          `Please specify the reason why ${b.clientName}'s second payment receipt is being rejected:`,
+                                          "e.g., Receipt scan is illegible or incorrect amount.",
+                                          "Receipt scan is illegible.",
+                                          (reason) => {
+                                            const finalReason = reason || "Receipt scan is illegible.";
+                                            if (onUpdateBookings) {
+                                              onUpdateBookings((prev) =>
+                                                prev.map((item) =>
+                                                  item.id === b.id
+                                                    ? {
+                                                        ...item,
+                                                        secondPaymentRejected: true,
+                                                        secondPaymentRejectionReason: finalReason,
+                                                        secondReceiptUrl: undefined,
+                                                      }
+                                                    : item
+                                                )
+                                              );
+                                              onAddAuditLog(
+                                                role === "DEVELOPER" ? "Developer Admin" : "Irfan (Owner)",
+                                                `Rejected the 2nd payment receipt for ${b.clientName}'s event. Reason: ${finalReason}`,
+                                                "warning"
+                                              );
+                                              
+                                              if (onUpdateNotifications) {
+                                                const newNotif = {
+                                                  id: "n_rejected_" + Date.now(),
+                                                  title: `2nd Payment REJECTED for ${b.clientName}`,
+                                                  message: `Rejection reason: ${finalReason}. Requested re-upload of transaction proof.`,
+                                                  timestamp: new Date().toLocaleTimeString(),
+                                                  type: "booking" as const,
+                                                  severity: "warning" as const,
+                                                  isRead: false
+                                                };
+                                                onUpdateNotifications(prev => [newNotif, ...prev]);
+                                              }
+                                              triggerCustomAlert("Rejection Logged", `❌ Rejected 2nd payment receipt for ${b.clientName}.`);
+                                            }
                                           }
-                                          alert(`❌ Rejected 2nd payment receipt for ${b.clientName}.`);
-                                        }
+                                        );
                                       }}
                                       className="px-1.5 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[8px] font-mono rounded font-bold"
                                     >
@@ -1115,6 +1434,17 @@ export default function OwnerDashboard({
                               )}
                             </div>
                           </td>
+                          {role === "DEVELOPER" && (
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBooking(b.id)}
+                                className="px-2.5 py-0.5 bg-red-950/40 hover:bg-red-900/40 border border-red-500/20 text-red-400 rounded text-[9px] font-mono font-bold uppercase transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -1270,27 +1600,30 @@ export default function OwnerDashboard({
         </div>
       )}
 
-      {/* WHATSAPP CRM TERMINAL */}
+      {/* CHAT COORDINATION HUB */}
       {activeMenu === "crm" && (
-        <div className="bg-neutral-900/60 border border-white/10 rounded-[2rem] overflow-hidden flex flex-col h-[520px] backdrop-blur-md">
+        <div className="bg-neutral-900/60 border border-white/10 rounded-[2rem] overflow-hidden flex flex-col h-[560px] backdrop-blur-md">
           <div className="bg-[#799351]/10 p-4 border-b border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <MessageSquare className="w-5 h-5 text-[#a1c398]" />
               <div>
-                <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white">
-                  WhatsApp CRM Coordination Hub
+                <h3 className="text-xs font-bold font-display uppercase tracking-wider text-white">
+                  CHAT COORDINATION HUB
                 </h3>
-                <span className="text-[10px] text-gray-400 block font-mono">Founders Terminal Line</span>
+                <span className="text-[10px] text-gray-400 block font-mono uppercase">Multi-Profile Unified Secure Terminal</span>
               </div>
             </div>
-            <span className="text-[9px] font-mono font-bold bg-[#799351]/10 px-2 py-0.5 rounded text-[#a1c398] border border-[#799351]/20">
-              BRIDGE STATUS: SYNCED
+            <span className="text-[9px] font-mono font-bold bg-[#799351]/10 px-2.5 py-0.5 rounded text-[#a1c398] border border-[#799351]/20 uppercase">
+              Profile: {role} Active
             </span>
           </div>
 
           <div className="flex flex-1 min-h-0">
             {/* Left Clients list */}
             <div className="w-[30%] border-r border-white/5 overflow-y-auto bg-black/20">
+              <div className="p-3 border-b border-white/5 bg-neutral-950/20">
+                <span className="text-[9px] font-mono font-bold text-gray-500 uppercase tracking-widest block">Active Event Feeds</span>
+              </div>
               {uniqueClients.map((client) => {
                 const isActive = client.id === activeChatClientId;
                 return (
@@ -1302,7 +1635,8 @@ export default function OwnerDashboard({
                     }`}
                   >
                     <span className="text-xs font-bold truncate block text-white">{client.clientName}</span>
-                    <span className="text-[10px] text-gray-400 truncate block font-light">{client.lastMessage}</span>
+                    <span className="text-[10px] text-gray-400 truncate block font-light font-mono">{client.id.toUpperCase().substring(0, 8)}</span>
+                    <span className="text-[9px] text-gray-500 truncate block mt-0.5 italic">{client.lastMessage}</span>
                   </button>
                 );
               })}
@@ -1310,29 +1644,37 @@ export default function OwnerDashboard({
 
             {/* Right Chat panel */}
             <div className="w-[70%] flex flex-col justify-between bg-black/40">
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {activeChats.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-gray-500 text-xs">
-                    Select a client chat sequence.
+                  <div className="h-full flex flex-col items-center justify-center text-gray-500 text-xs gap-2">
+                    <MessageSquare className="w-8 h-8 text-gray-600" />
+                    <span>No message logs for reference {activeChatClientId}. Start the thread!</span>
                   </div>
                 ) : (
                   activeChats.map((m) => {
                     const isClient = m.sender === "CLIENT";
+                    const isCrew = m.sender === "CREW";
+                    
+                    let senderLabel = m.clientName;
+                    let bubbleBg = "bg-neutral-800 border border-white/5 text-gray-100 rounded-tl-none";
+                    let containerClass = "mr-auto items-start";
+
+                    if (!isClient) {
+                      bubbleBg = isCrew 
+                        ? "bg-[#799351]/25 border border-[#799351]/40 text-[#a1c398] rounded-tr-none"
+                        : "bg-[#799351] text-white rounded-tr-none";
+                      containerClass = "ml-auto items-end";
+                    }
+
                     return (
                       <div
                         key={m.id}
-                        className={`flex flex-col max-w-[85%] ${isClient ? "mr-auto items-start" : "ml-auto items-end"}`}
+                        className={`flex flex-col max-w-[80%] ${containerClass}`}
                       >
-                        <span className="text-[8px] font-mono text-gray-500 mb-0.5">
-                          {isClient ? m.clientName : "IRFAN (CO-FOUNDER)"}
+                        <span className="text-[8px] font-mono text-gray-500 mb-1 uppercase tracking-wider">
+                          {senderLabel} • {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
-                        <div
-                          className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                            isClient
-                              ? "bg-neutral-800 text-white rounded-tl-none"
-                              : "bg-[#799351] text-white rounded-tr-none"
-                          }`}
-                        >
+                        <div className={`p-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${bubbleBg}`}>
                           {m.text}
                         </div>
                       </div>
@@ -1341,35 +1683,69 @@ export default function OwnerDashboard({
                 )}
               </div>
 
-              {/* Chat action box with Gemini AI reply suggestion */}
+              {/* Chat actions block with file attachment & reply suggestion */}
               <div className="p-4 border-t border-white/5 bg-black/20 space-y-3">
                 {currentClientBooking && (
                   <div className="flex items-center justify-between p-2 bg-[#799351]/10 border border-[#799351]/25 rounded-xl">
                     <span className="text-[10px] font-semibold text-[#a1c398] flex items-center gap-1">
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Gemini AI reply suggestions active</span>
+                      <span>Gemini Response Assistant Ready</span>
                     </span>
 
                     <button
+                      type="button"
                       onClick={triggerAiResponseGenerator}
                       disabled={isAiLoading}
-                      className="px-3 py-1 bg-[#799351] hover:bg-[#5f743e] text-white text-[9px] font-bold font-mono rounded-lg transition-all"
+                      className="px-3 py-1 bg-[#799351] hover:bg-[#5f743e] text-white text-[9px] font-bold font-mono rounded-lg transition-all uppercase tracking-wide"
                     >
-                      {isAiLoading ? "Processing..." : "Suggest Reply"}
+                      {isAiLoading ? "Synthesizing..." : "Generate Suggestion"}
                     </button>
                   </div>
                 )}
 
-                <form onSubmit={handleSendMessageSubmit} className="flex gap-2">
+                <form onSubmit={handleSendMessageSubmit} className="flex gap-2.5 items-center">
+                  
+                  {/* Image attachment button */}
+                  <button
+                    type="button"
+                    onClick={() => chatFileInputRef.current?.click()}
+                    className="p-3 bg-neutral-950 border border-white/10 hover:border-[#799351] text-gray-400 hover:text-white rounded-xl transition-all shrink-0"
+                    title="Attach reference pictures, design overlays, layout specifications"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                  </button>
                   <input
-                    type="text"
-                    value={typedMessage}
-                    onChange={(e) => setTypedMessage(e.target.value)}
-                    placeholder="Type coordinating reply here..."
-                    className="flex-1 text-xs p-3 bg-neutral-950 border border-white/10 rounded-xl outline-none focus:border-[#799351] text-white"
+                    type="file"
+                    ref={chatFileInputRef}
+                    onChange={handleChatFileSelect}
+                    className="hidden"
+                    accept="image/*"
                   />
-                  <button type="submit" className="p-3 bg-[#799351] hover:bg-[#5f743e] text-white rounded-xl shadow-md">
-                    <Send className="w-4 h-4" />
+
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={typedMessage}
+                      onChange={(e) => setTypedMessage(e.target.value)}
+                      placeholder={chatFileName ? `Attached picture: ${chatFileName}` : "Type secure coordinating reply here..."}
+                      className="w-full text-xs p-3.5 bg-neutral-950 border border-white/10 rounded-xl outline-none focus:border-[#799351] text-white placeholder-gray-600"
+                    />
+                    {chatFileName && (
+                      <button
+                        type="button"
+                        onClick={() => { setChatFileName(null); setChatFileUrl(null); }}
+                        className="absolute right-3.5 top-3 text-gray-400 hover:text-white text-xs font-bold"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="p-3.5 bg-[#799351] hover:bg-[#5f743e] text-white rounded-xl shadow-md transition-all shrink-0"
+                  >
+                    <Send className="w-4.5 h-4.5" />
                   </button>
                 </form>
               </div>
@@ -1475,25 +1851,37 @@ export default function OwnerDashboard({
                   </div>
 
                   {/* Role modification & access control */}
-                  <div className="flex flex-wrap items-center gap-3 border-t border-white/5 pt-2.5 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-500 font-mono text-[10px]">Permission Role:</span>
-                      <select
-                        value={acc.role}
-                        onChange={(e) => handleUpdateAccountRole(acc.id, e.target.value as Role)}
-                        className="bg-neutral-950 text-white border border-white/10 rounded px-2 py-0.5 text-[11px] outline-none"
-                      >
-                        <option value="CLIENT">CLIENT</option>
-                        <option value="CREW">CREW</option>
-                        <option value="OWNER">OWNER</option>
-                        <option value="DEVELOPER">DEVELOPER</option>
-                      </select>
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-2.5 text-xs w-full">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500 font-mono text-[10px]">Permission Role:</span>
+                        <select
+                          value={acc.role}
+                          onChange={(e) => handleUpdateAccountRole(acc.id, e.target.value as Role)}
+                          className="bg-neutral-950 text-white border border-white/10 rounded px-2 py-0.5 text-[11px] outline-none"
+                        >
+                          <option value="CLIENT">CLIENT</option>
+                          <option value="CREW">CREW</option>
+                          <option value="OWNER">OWNER</option>
+                          <option value="DEVELOPER">DEVELOPER</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-amber-950/20 px-2 py-0.5 rounded border border-amber-500/10 text-[10px] text-amber-400 font-mono">
+                        <span>Accessible Bookings:</span>
+                        <strong>{acc.clientBookingIds.length > 0 ? acc.clientBookingIds.join(", ") : "All"}</strong>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1 bg-amber-950/20 px-2 py-0.5 rounded border border-amber-500/10 text-[10px] text-amber-400 font-mono">
-                      <span>Accessible Bookings:</span>
-                      <strong>{acc.clientBookingIds.length > 0 ? acc.clientBookingIds.join(", ") : "All"}</strong>
-                    </div>
+                    {role === "DEVELOPER" && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteUser(acc.email, acc.name)}
+                        className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900/40 border border-red-500/20 text-red-400 rounded text-[10px] font-mono font-bold uppercase transition-all"
+                      >
+                        Delete Profile
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1531,6 +1919,25 @@ export default function OwnerDashboard({
                   {isCalendarSynced ? "Disable Sync" : "Enable Sync"}
                 </button>
               </div>
+
+              {/* Developer Database Destructive Section */}
+              {role === "DEVELOPER" && (
+                <div className="pt-4 border-t border-white/5 space-y-3">
+                  <h4 className="text-[10px] font-mono text-red-500 uppercase tracking-widest font-bold">
+                    🚨 Developer Destructive Actions
+                  </h4>
+                  <p className="text-[11px] text-gray-400 font-light leading-relaxed">
+                    System Master operations. This will completely wipe all Firestore entries and clear localStorage. Default profiles will be reseeded.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleDeleteDatabase}
+                    className="w-full py-2.5 bg-red-950/30 hover:bg-red-950/60 border border-red-500/30 hover:border-red-500/50 text-red-400 rounded-xl text-[10px] font-bold font-mono uppercase tracking-widest transition-all shadow-md cursor-pointer"
+                  >
+                    Purge & Delete Database
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Testimonials Manager (7 cols) */}
@@ -1926,12 +2333,43 @@ export default function OwnerDashboard({
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-mono text-gray-400 uppercase">DuitNow QR Image URL / Photo Source</label>
               <input
-                type="url"
+                type="text"
                 value={bankQrUrlEdit}
                 onChange={(e) => setBankQrUrlEdit(e.target.value)}
                 placeholder="Paste an image URL, e.g. https://images.unsplash.com/photo-qr..."
                 className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-emerald-500"
               />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-mono text-gray-400 uppercase">Alternative QR File Upload Source</label>
+              <div className="flex gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        const base64String = reader.result as string;
+                        setBankQrUrlEdit(base64String);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="p-2.5 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-emerald-500 w-full cursor-pointer file:bg-emerald-600 file:border-none file:text-white file:px-3 file:py-1 file:rounded-lg file:text-xs file:font-semibold hover:file:bg-emerald-700"
+                />
+                {bankQrUrlEdit && bankQrUrlEdit.startsWith("data:") && (
+                  <button
+                    type="button"
+                    onClick={() => setBankQrUrlEdit("")}
+                    className="px-3 bg-red-950/40 text-red-400 hover:bg-red-900/40 border border-red-500/20 text-xs rounded-xl transition-all font-semibold font-mono"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="md:col-span-2 p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-2xl flex flex-col sm:flex-row items-center gap-4">
@@ -1967,6 +2405,79 @@ export default function OwnerDashboard({
               Save Bank Configuration Coordinates
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Premium, iframe-safe Custom Dialog Modal */}
+      {customDialog && customDialog.isOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-md bg-neutral-900 border border-white/10 rounded-3xl p-6 shadow-2xl space-y-6">
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold font-mono text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                {customDialog.type === "confirm" && <span className="text-amber-500">⚠️ {customDialog.title}</span>}
+                {customDialog.type === "alert" && <span className="text-emerald-400">✨ {customDialog.title}</span>}
+                {customDialog.type === "prompt" && <span className="text-blue-400">📝 {customDialog.title}</span>}
+              </h3>
+              <p className="text-xs text-gray-300 leading-relaxed font-light whitespace-pre-wrap">
+                {customDialog.message}
+              </p>
+            </div>
+
+            {customDialog.type === "prompt" && (
+              <input
+                type="text"
+                id="custom-dialog-input"
+                placeholder={customDialog.placeholder || ""}
+                defaultValue={customDialog.defaultValue || ""}
+                className="w-full p-3 bg-black border border-white/10 rounded-xl text-xs text-white outline-none focus:border-emerald-500 font-mono"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const val = (e.currentTarget as HTMLInputElement).value;
+                    customDialog.onConfirm(val);
+                  }
+                }}
+              />
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              {customDialog.type !== "alert" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customDialog.onCancel) {
+                      customDialog.onCancel();
+                    } else {
+                      setCustomDialog(null);
+                    }
+                  }}
+                  className="px-4 py-2 bg-neutral-950 hover:bg-neutral-900 border border-white/10 text-gray-400 hover:text-white rounded-xl text-xs font-semibold tracking-wider font-mono uppercase transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (customDialog.type === "prompt") {
+                    const val = (document.getElementById("custom-dialog-input") as HTMLInputElement)?.value || "";
+                    customDialog.onConfirm(val);
+                  } else {
+                    customDialog.onConfirm();
+                  }
+                }}
+                className={`px-4 py-2 text-white rounded-xl text-xs font-semibold tracking-wider font-mono uppercase transition-all cursor-pointer ${
+                  customDialog.type === "confirm" 
+                    ? "bg-red-600 hover:bg-red-700" 
+                    : customDialog.type === "prompt"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-emerald-600 hover:bg-emerald-700"
+                }`}
+              >
+                {customDialog.type === "confirm" ? "Confirm" : "OK"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

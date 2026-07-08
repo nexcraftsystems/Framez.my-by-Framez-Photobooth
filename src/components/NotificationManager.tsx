@@ -20,6 +20,7 @@ interface NotificationManagerProps {
   role: Role;
   userEmail: string;
   onAddAuditLog?: (actor: string, action: string, severity: "info" | "warning" | "alert") => void;
+  targetCrewId?: string;
 }
 
 export default function NotificationManager({
@@ -28,6 +29,7 @@ export default function NotificationManager({
   role,
   userEmail,
   onAddAuditLog,
+  targetCrewId,
 }: NotificationManagerProps) {
   // Creator form state (Developer only)
   const [newTitle, setNewTitle] = useState("");
@@ -37,10 +39,13 @@ export default function NotificationManager({
 
   const isDeveloper = role === "DEVELOPER";
 
-  // Filter notifications: matches target role OR "ALL"
+  // Filter notifications: matches target role OR "ALL" OR matches personal crew ID
   const visibleNotifications = notifications.filter((notif) => {
     if (notif.targetRole === "ALL") return true;
     if (notif.targetRole === role) return true;
+    if (role === "CREW" && notif.recipientRole === "PERSONAL_CREW" && targetCrewId && notif.targetCrewId === targetCrewId) {
+      return true;
+    }
     return false;
   });
 
@@ -63,7 +68,10 @@ export default function NotificationManager({
   const handleMarkAllAsRead = () => {
     onUpdateNotifications((prev) =>
       prev.map((notif) => {
-        const matchesTarget = notif.targetRole === "ALL" || notif.targetRole === role;
+        const matchesTarget = 
+          notif.targetRole === "ALL" || 
+          notif.targetRole === role ||
+          (role === "CREW" && notif.recipientRole === "PERSONAL_CREW" && targetCrewId && notif.targetCrewId === targetCrewId);
         if (matchesTarget) {
           const reads = notif.isReadBy || [];
           if (!reads.includes(userEmail)) {

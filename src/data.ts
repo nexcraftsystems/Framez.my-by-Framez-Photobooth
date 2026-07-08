@@ -59,10 +59,34 @@ export const PACKAGES: Package[] = [
       "High-speed dye-sub printer & premium lighting rig",
       "Zero Transit Fee in Selangor, Melaka, N.Sembilan, Johor, Pahang"
     ]
+  },
+  {
+    id: "video_guestbook",
+    name: "Video Guestbook Experience",
+    description: "Capturing high-definition video memories with a choice of Long Mirror or Convex Mirror and custom compilations.",
+    price: 400,
+    durationHrs: 5,
+    printSize: "Unlimited HD Video (No Prints)",
+    templatesCount: 1,
+    features: [
+      "5 Hours Active Coverage",
+      "Long Mirror or Convex Mirror setup",
+      "Unlimited Video captures on-the-spot",
+      "Free Compiled Video highlights",
+      "Professional Booth Assistant on-site",
+      "Zero Transit Fee in Selangor, Melaka, N.Sembilan, Johor, Pahang"
+    ]
   }
 ];
 
 export const ADDONS: AddOn[] = [
+  {
+    id: "video_guestbook_addon",
+    name: "Video Guestbook Experience Upgrade (Mirror, Unlimited Video, Free Compile Video, Assistant, 5 hrs)",
+    price: 400,
+    unit: "flat",
+    quantity: 0
+  },
   {
     id: "4r_3h",
     name: "Upgrade to 4R Photo Size (3 Hours)",

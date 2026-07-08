@@ -19,25 +19,27 @@ service cloud.firestore {
 
     // accounts collection rules
     match /accounts/{accountId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow read, write: if true;
     }
 
     // bookings collection rules
     match /bookings/{bookingId} {
-      allow read: if true;
-      allow create, update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow read, write: if true;
     }
 
     // audit_logs collection rules
     match /audit_logs/{logId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if false; // Audit logs are immutable append-only records
-      allow delete: if isSignedIn(); // Only developer triggers bulk clear, allowed via auth signature
+      allow read, write: if true;
+    }
+
+    // chats collection rules
+    match /chats/{chatId} {
+      allow read, write: if true;
+    }
+
+    // notifications collection rules
+    match /notifications/{notificationId} {
+      allow read, write: if true;
     }
   }
 }

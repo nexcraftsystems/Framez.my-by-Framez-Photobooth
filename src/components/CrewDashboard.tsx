@@ -936,6 +936,7 @@ export default function CrewDashboard({
             role="CREW"
             userEmail={userEmail}
             onAddAuditLog={onAddAuditLog}
+            targetCrewId={crewProfile?.id}
           />
         )}
 

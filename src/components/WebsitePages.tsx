@@ -1,4 +1,4 @@
-import { useState, useEffect, ChangeEvent } from "react";
+import { useState, useEffect, ChangeEvent, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Sparkles, 
@@ -105,6 +105,17 @@ export default function WebsitePages({
   const [inquiryRegion, setInquiryRegion] = useState("selangor");
   const [inquiryMessage, setInquiryMessage] = useState("");
   const [inquirySubmitted, setInquirySubmitted] = useState(false);
+
+  // Packages scroll slider ref and handler
+  const packagesScrollRef = useRef<HTMLDivElement>(null);
+  const scrollPackages = (direction: "left" | "right") => {
+    if (packagesScrollRef.current) {
+      const { scrollLeft, clientWidth } = packagesScrollRef.current;
+      const scrollAmount = clientWidth * 0.85;
+      const scrollTo = direction === "left" ? scrollLeft - scrollAmount : scrollLeft + scrollAmount;
+      packagesScrollRef.current.scrollTo({ left: scrollTo, behavior: "smooth" });
+    }
+  };
 
   // Sync preselected package when component mounts/receives it
   useEffect(() => {
@@ -296,18 +307,44 @@ export default function WebsitePages({
               EXCLUSIVE PHOTOBOOTH PLANS
             </span>
             <h2 className="text-4xl md:text-5xl text-white font-display">
-              Select Your <span className="italic font-light">Custom Space</span>
+              Select Your <span className="italic font-light">Custom Choice</span>
             </h2>
             <p className="text-sm text-gray-400 font-light">
               Choose from our meticulously structured packages. All include unlimited ultra-high-speed printing, high-fidelity backdrops, and digital downloads.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Elegant slider controls */}
+          <div className="flex justify-center items-center gap-4 mt-2 mb-6">
+            <button
+              type="button"
+              onClick={() => scrollPackages("left")}
+              className="w-10 h-10 rounded-full border border-white/10 bg-neutral-900/80 hover:bg-neutral-800 hover:border-[#799351]/50 text-white flex items-center justify-center transition-all shadow-lg cursor-pointer"
+              title="Previous Plan"
+            >
+              <ChevronLeft className="w-5 h-5 text-gray-300" />
+            </button>
+            <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#a1c398]">
+              ◄ Swipe or use buttons to slide ►
+            </span>
+            <button
+              type="button"
+              onClick={() => scrollPackages("right")}
+              className="w-10 h-10 rounded-full border border-white/10 bg-neutral-900/80 hover:bg-neutral-800 hover:border-[#799351]/50 text-white flex items-center justify-center transition-all shadow-lg cursor-pointer"
+              title="Next Plan"
+            >
+              <ChevronRight className="w-5 h-5 text-gray-300" />
+            </button>
+          </div>
+
+          <div 
+            ref={packagesScrollRef}
+            className="flex flex-nowrap gap-6 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:none snap-x snap-mandatory pb-6"
+          >
             {PACKAGES.map((pkg) => (
               <div
                 key={pkg.id}
-                className="glass-card rounded-3xl p-6 md:p-8 border-[#799351]/20 flex flex-col justify-between hover:border-[#799351]/40 hover:scale-[1.01] transition-all bg-neutral-900/40 relative overflow-hidden"
+                className="w-full sm:w-[48%] lg:w-[31%] shrink-0 snap-start snap-always glass-card rounded-3xl p-6 md:p-8 border-[#799351]/20 flex flex-col justify-between hover:border-[#799351]/40 hover:scale-[1.01] transition-all bg-neutral-900/40 relative overflow-hidden"
               >
                 {pkg.id === "platinum" && (
                   <div className="absolute top-4 right-4 bg-[#799351] text-white text-[9px] font-bold font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border border-[#a1c398]/30 animate-pulse">
@@ -345,6 +382,7 @@ export default function WebsitePages({
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => onSelectPackage(pkg)}
                   className="w-full py-3 rounded-xl bg-[#799351] hover:bg-[#5f743e] text-white text-xs font-semibold uppercase tracking-widest transition-all flex items-center justify-center gap-2 group shadow-md"
                 >

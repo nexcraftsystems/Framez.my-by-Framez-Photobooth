@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowUpRight, Menu, X, ShieldAlert, User, Briefcase, Sparkles } from "lucide-react";
+import { ArrowUpRight, Menu, X, ShieldAlert, User, Briefcase, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { Role } from "../types";
 
 interface NavigationHeaderProps {
@@ -8,6 +8,8 @@ interface NavigationHeaderProps {
   onOpenLogin: () => void;
   onNavigateSection: (section: string) => void;
   currentSection: string;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
 }
 
 export default function NavigationHeader({
@@ -16,12 +18,14 @@ export default function NavigationHeader({
   onOpenLogin,
   onNavigateSection,
   currentSection,
+  soundEnabled,
+  onToggleSound,
 }: NavigationHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [
     { id: "about", label: "About" },
-    { id: "spaces", label: "Spaces" },
+    { id: "spaces", label: "Choices" },
     { id: "how-to-book", label: "How to Book" },
     { id: "locations", label: "Memories" },
     { id: "calendar", label: "Calendar" },
@@ -72,6 +76,18 @@ export default function NavigationHeader({
       {/* Right Column: Portal Login/Logout CTA */}
       <div className="hidden md:flex items-center gap-3">
         <button
+          onClick={onToggleSound}
+          title={soundEnabled ? "Mute notification sounds" : "Unmute notification sounds"}
+          className={`p-2.5 rounded-full border backdrop-blur-md transition-all cursor-pointer ${
+            soundEnabled
+              ? "bg-emerald-950/40 border-emerald-500/30 text-[#a1c398] hover:bg-emerald-900/40"
+              : "bg-neutral-900/60 border-white/10 text-gray-400 hover:bg-neutral-800/60"
+          }`}
+        >
+          {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+        </button>
+
+        <button
           onClick={onOpenLogin}
           className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-medium text-white bg-[#799351] hover:bg-[#5f743e] transition-colors border border-[#a1c398]/30 shadow-xl font-display group"
         >
@@ -81,7 +97,19 @@ export default function NavigationHeader({
       </div>
 
       {/* Mobile Hamburger Trigger */}
-      <div className="flex md:hidden items-center gap-3">
+      <div className="flex md:hidden items-center gap-2">
+        <button
+          onClick={onToggleSound}
+          title={soundEnabled ? "Mute notification sounds" : "Unmute notification sounds"}
+          className={`p-2 rounded-xl border backdrop-blur-md transition-all ${
+            soundEnabled
+              ? "bg-emerald-950/40 border-emerald-500/30 text-[#a1c398]"
+              : "bg-neutral-900/60 border-white/10 text-gray-400"
+          }`}
+        >
+          {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+        </button>
+
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="p-2 rounded-xl bg-white/10 border border-white/10 text-white"
