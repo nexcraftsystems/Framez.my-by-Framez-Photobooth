@@ -55,6 +55,7 @@ import {
   Bar
 } from "recharts";
 import { PACKAGES } from "../data";
+import { hashPassword, generateSalt } from "../utils/crypto";
 
 interface OwnerDashboardProps {
   bookingsList: Booking[];
@@ -158,7 +159,8 @@ export default function OwnerDashboard({
       { id: "acc_1", email: "siti@gmail.com", name: "Siti Aminah", role: "CLIENT", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: ["b1"] },
       { id: "acc_2", email: "crew@framez.my", name: "Zack Crew lead", role: "CREW", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
       { id: "acc_3", email: "irfan@framez.my", name: "Irfan (Co-Founder)", role: "OWNER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
-      { id: "acc_4", email: "nexcraftsystems@gmail.com", name: "Developer Superuser", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
+      { id: "acc_4", email: "nexcraftsystems@google.com", name: "Developer Superuser (Google)", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
+      { id: "acc_4_gmail", email: "nexcraftsystems@gmail.com", name: "Developer Superuser (Gmail)", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
       { id: "acc_5", email: "zack@framez.my", name: "Zack Coordinator", role: "CREW", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [] },
     ];
   });
@@ -270,6 +272,26 @@ export default function OwnerDashboard({
       setFirestoreChats(msgs);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, "chats");
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const accountsRef = collection(db, "accounts");
+    const unsubscribe = onSnapshot(accountsRef, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data());
+      });
+      if (list.length > 0) {
+        // De-duplicate accounts list by ID to prevent any key duplication
+        const uniqueList = list.filter((acc, index, self) =>
+          self.findIndex(a => a.id === acc.id) === index
+        );
+        setGoogleAccounts(uniqueList);
+      }
+    }, (error) => {
+      console.error("Firestore accounts snapshot error", error);
     });
     return () => unsubscribe();
   }, []);
@@ -468,58 +490,87 @@ export default function OwnerDashboard({
     );
   };
 
-  // Developer Only: Create GSSO Account
-  const handleCreateAccount = (e: React.FormEvent) => {
+  // Developer Only: Create User Account
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAccEmail || !newAccName) {
-      alert("Please provide both Account Name and Verified Google Email.");
+      alert("Please provide both Account Name and Email Address.");
       return;
     }
 
-    const newAcc: GoogleAccount = {
-      id: "acc_" + Math.random().toString(36).substr(2, 9),
-      email: newAccEmail.trim().toLowerCase(),
-      name: newAccName.trim(),
-      role: newAccRole,
-      accessStatus: "ACTIVE_VERIFIED",
-      clientBookingIds: selectedAccessBooking ? [selectedAccessBooking] : []
-    };
+    const cleanEmail = newAccEmail.trim().toLowerCase();
+    const cleanName = newAccName.trim();
+    const newId = "acc_" + Math.random().toString(36).substring(2, 9);
 
-    setGoogleAccounts((prev) => [newAcc, ...prev]);
-    onAddAuditLog(
-      "Developer",
-      `Created verified Google Easy-Access account: ${newAcc.email} with Role: ${newAcc.role}.`,
-      "alert"
-    );
+    try {
+      // 1. Generate salt and hash for the default temporary password "Framez123"
+      const salt = generateSalt();
+      const hash = await hashPassword("Framez123", salt);
 
-    // reset fields
-    setNewAccEmail("");
-    setNewAccName("");
-    setNewAccRole("CLIENT");
-    setSelectedAccessBooking("");
-    alert(`🔑 Registered ${newAcc.name} successfully. Account can now login securely via Google SSO!`);
+      const newAcc: any = {
+        id: newId,
+        email: cleanEmail,
+        name: cleanName,
+        role: newAccRole,
+        accessStatus: "ACTIVE_VERIFIED",
+        clientBookingIds: selectedAccessBooking ? [selectedAccessBooking] : [],
+        passwordSalt: salt,
+        passwordHash: hash,
+        firstTimeLogin: true
+      };
+
+      // 2. Save in Firestore accounts collection
+      await setDoc(doc(db, "accounts", newId), newAcc);
+
+      setGoogleAccounts((prev) => {
+        if (prev.some((a) => a.id === newAcc.id)) return prev;
+        return [newAcc, ...prev];
+      });
+      onAddAuditLog(
+        "Developer",
+        `Created verified user account: ${cleanEmail} with Role: ${newAccRole}.`,
+        "alert"
+      );
+
+      // reset fields
+      setNewAccEmail("");
+      setNewAccName("");
+      setNewAccRole("CLIENT");
+      setSelectedAccessBooking("");
+
+      triggerCustomAlert(
+        "📩 Account Created Successfully",
+        `✨ Success! The user account has been registered in our central database.\n\n🔑 Credentials:\n• Email: ${cleanEmail}\n• Temporary Password: Framez123\n\n⚠️ Important: Please COPY these credentials and send them to the team member directly (via WhatsApp, Slack, or Email).\n\nDuring their first login, they will be prompted to replace this temporary password with their own secure password.`
+      );
+    } catch (error: any) {
+      console.error("Failed to create user account in Firestore:", error);
+      alert("❌ Failed to create user account in database. " + error.message);
+    }
   };
 
   // Developer Only: Modify account permission roles
-  const handleUpdateAccountRole = (accId: string, targetRole: Role) => {
-    setGoogleAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id === accId) {
-          onAddAuditLog(
-            "Developer",
-            `Upgraded permission role for ${acc.email} from ${acc.role} to ${targetRole}.`,
-            "alert"
-          );
-          return { ...acc, role: targetRole };
-        }
-        return acc;
-      })
-    );
+  const handleUpdateAccountRole = async (accId: string, targetRole: Role) => {
+    try {
+      const targetAcc = googleAccounts.find((a) => a.id === accId);
+      if (!targetAcc) return;
+
+      const updatedAcc = { ...targetAcc, role: targetRole };
+      await setDoc(doc(db, "accounts", accId), updatedAcc);
+
+      onAddAuditLog(
+        "Developer",
+        `Upgraded permission role for ${targetAcc.email} from ${targetAcc.role} to ${targetRole}.`,
+        "alert"
+      );
+    } catch (error: any) {
+      console.error("Failed to update account role in Firestore:", error);
+      alert("❌ Failed to update account role: " + error.message);
+    }
   };
 
   // Developer Only: Delete user account with cascade deletions
   const handleDeleteUser = async (userEmail: string, userName: string) => {
-    if (userEmail === "nexcraftsystems@gmail.com") {
+    if (userEmail === "nexcraftsystems@gmail.com" || userEmail === "nexcraftsystems@google.com") {
       triggerCustomAlert(
         "Operational Block",
         "❌ Operational Block: You are currently signed in as this developer and cannot delete your own session credentials."
@@ -734,19 +785,28 @@ export default function OwnerDashboard({
   };
 
   // Developer Only: Edit Client Access
-  const handleToggleBookingAccess = (accId: string, bookingId: string) => {
-    setGoogleAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id === accId) {
-          const alreadyHas = acc.clientBookingIds.includes(bookingId);
-          const updated = alreadyHas
-            ? acc.clientBookingIds.filter(id => id !== bookingId)
-            : [...acc.clientBookingIds, bookingId];
-          return { ...acc, clientBookingIds: updated };
-        }
-        return acc;
-      })
-    );
+  const handleToggleBookingAccess = async (accId: string, bookingId: string) => {
+    try {
+      const targetAcc = googleAccounts.find((a) => a.id === accId);
+      if (!targetAcc) return;
+
+      const alreadyHas = targetAcc.clientBookingIds.includes(bookingId);
+      const updatedIds = alreadyHas
+        ? targetAcc.clientBookingIds.filter((id) => id !== bookingId)
+        : [...targetAcc.clientBookingIds, bookingId];
+
+      const updatedAcc = { ...targetAcc, clientBookingIds: updatedIds };
+      await setDoc(doc(db, "accounts", accId), updatedAcc);
+
+      onAddAuditLog(
+        "Developer",
+        `Updated booking access for ${targetAcc.email}: ${alreadyHas ? "Revoked" : "Granted"} access to booking ID: ${bookingId}`,
+        "info"
+      );
+    } catch (error: any) {
+      console.error("Failed to update booking access in Firestore:", error);
+      alert("❌ Failed to update booking access: " + error.message);
+    }
   };
 
   // Search filter for progress table
@@ -1758,10 +1818,10 @@ export default function OwnerDashboard({
       {activeMenu === "accounts" && role === "DEVELOPER" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Create new GSSO accounts (5 columns) */}
+          {/* Create new user accounts (5 columns) */}
           <div className="lg:col-span-5 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md">
             <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white mb-4">
-              🔑 Register verified GSSO Account
+              🔑 Register User Account
             </h3>
 
             <form onSubmit={handleCreateAccount} className="space-y-4">
@@ -1778,13 +1838,13 @@ export default function OwnerDashboard({
               </div>
 
               <div className="flex flex-col">
-                <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Google Easy-Access Email</label>
+                <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Account Email Address</label>
                 <input
                   type="email"
                   required
                   value={newAccEmail}
                   onChange={(e) => setNewAccEmail(e.target.value)}
-                  placeholder="e.g. sitiaminah@gmail.com"
+                  placeholder="e.g. sitiaminah@gmail.com or siti@nexcraft.com"
                   className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-amber-500"
                 />
               </div>
@@ -1825,7 +1885,7 @@ export default function OwnerDashboard({
                 type="submit"
                 className="w-full py-2.5 bg-amber-950 hover:bg-amber-900 border border-amber-500 text-amber-400 font-semibold rounded-lg text-xs uppercase tracking-wider transition-all"
               >
-                Register Google Session Token
+                Register Account Credentials
               </button>
             </form>
           </div>
@@ -1833,7 +1893,7 @@ export default function OwnerDashboard({
           {/* Accounts list (7 columns) */}
           <div className="lg:col-span-7 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md">
             <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white mb-4">
-              🛡️ verified GSSO Active Credentials ({googleAccounts.length})
+              🛡️ Registered Active Credentials ({googleAccounts.length})
             </h3>
 
             <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
@@ -1846,7 +1906,7 @@ export default function OwnerDashboard({
                     </div>
 
                     <span className="text-[8px] font-mono font-bold bg-amber-950/40 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full uppercase">
-                      verified Google token
+                      active credentials
                     </span>
                   </div>
 

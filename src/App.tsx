@@ -27,11 +27,12 @@ import DeveloperDashboard from "./components/DeveloperDashboard";
 import WebsitePages from "./components/WebsitePages";
 
 import { motion, AnimatePresence } from "motion/react";
-import { initializeFirestoreDb, db, addFirestoreAuditLog } from "./firebase";
-import { collection, onSnapshot, doc, setDoc, deleteDoc, getDocs } from "firebase/firestore";
+import { initializeFirestoreDb, db, addFirestoreAuditLog, handleFirestoreError, OperationType, auth, FireAccount } from "./firebase";
+import { collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, query, where } from "firebase/firestore";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 // Lucide icons
-import { Sparkles, Briefcase, User, ShieldAlert, Award, Calendar, Layers, ShieldCheck, Heart, Laptop, Tablet, Monitor, Volume2, VolumeX } from "lucide-react";
+import { Sparkles, Briefcase, User, ShieldAlert, Award, Calendar, Layers, ShieldCheck, Heart, Laptop, Tablet, Monitor, Volume2, VolumeX, Loader2 } from "lucide-react";
 
 export function playNotificationSound() {
   try {
@@ -74,6 +75,8 @@ export function playNotificationSound() {
 }
 
 export default function App() {
+  const [loadingAuth, setLoadingAuth] = useState(true);
+
   // Main session database keys (persistent with localstorage)
   const [activeRole, setActiveRole] = useState<Role>(() => {
     const saved = localStorage.getItem("framez_role");
@@ -155,6 +158,63 @@ export default function App() {
     initializeFirestoreDb();
   }, []);
 
+  // Live session state observer (secures session boundary)
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      setLoadingAuth(true);
+      if (user) {
+        try {
+          const email = (user.email || "").trim().toLowerCase();
+          const q = query(collection(db, "accounts"), where("email", "==", email));
+          const qSnap = await getDocs(q);
+
+          let role: Role = "CLIENT";
+          let resolvedEmail = email;
+
+          if (!qSnap.empty) {
+            const accData = qSnap.docs[0].data() as FireAccount;
+            role = accData.role;
+            resolvedEmail = accData.email;
+          } else {
+            // Auto-provision user account document on first secure federated login
+            const isDev = email === "nexcraftsystems@gmail.com";
+            const isOwner = email === "nexcraftsystems@google.com";
+            const resolvedRole: Role = isDev ? "DEVELOPER" : isOwner ? "OWNER" : "CLIENT";
+
+            const newId = user.uid;
+            const newAccount: FireAccount = {
+              id: newId,
+              email: email,
+              name: user.displayName || (isDev ? "Nexcraft Developer" : isOwner ? "Nexcraft Owner" : "Google Client User"),
+              role: resolvedRole,
+              accessStatus: "ACTIVE_VERIFIED",
+              clientBookingIds: [],
+              firstTimeLogin: false
+            };
+            await setDoc(doc(db, "accounts", newId), newAccount);
+            role = resolvedRole;
+            resolvedEmail = email;
+          }
+
+          setActiveRole(role);
+          setUserEmail(resolvedEmail);
+          localStorage.setItem("framez_role", role);
+          localStorage.setItem("framez_email", resolvedEmail);
+        } catch (err) {
+          console.error("Failed to sync authentic session with Firestore database:", err);
+        }
+      } else {
+        setActiveRole("GUEST");
+        setUserEmail("guest@framez.my");
+        localStorage.removeItem("framez_role");
+        localStorage.removeItem("framez_email");
+      }
+      setLoadingAuth(false);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
   useEffect(() => {
     const handleResize = () => setScreenWidth(window.innerWidth);
     window.addEventListener("resize", handleResize);
@@ -188,6 +248,7 @@ export default function App() {
       }
     }, (error) => {
       console.error("Bookings sync error:", error);
+      handleFirestoreError(error, OperationType.GET, "bookings");
     });
 
     // 2. Sync Notifications List
@@ -210,6 +271,7 @@ export default function App() {
       }
     }, (error) => {
       console.error("Notifications sync error:", error);
+      handleFirestoreError(error, OperationType.GET, "notifications");
     });
 
     return () => {
@@ -501,6 +563,49 @@ export default function App() {
     document.getElementById("interactive-portal-section")?.scrollIntoView({ behavior: "smooth" });
   };
 
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-black relative p-6 font-sans">
+        {/* Subtle background overlay */}
+        <div className="absolute inset-0 bg-[#070708] z-0 pointer-events-none" />
+        
+        {/* Decorative ambient background blur */}
+        <div 
+          className="absolute w-80 h-80 rounded-full blur-[100px] pointer-events-none opacity-20 z-0"
+          style={{
+            background: "linear-gradient(135deg, #799351 0%, #a1c398 100%)"
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col items-center text-center max-w-sm">
+          {/* Stylized custom security badge */}
+          <div className="p-4 bg-neutral-900/60 border border-white/10 rounded-full mb-6 relative animate-pulse shadow-2xl">
+            <ShieldCheck className="w-8 h-8 text-[#a1c398]" />
+            {/* Spinning radar arc */}
+            <div className="absolute -inset-1 rounded-full border border-[#799351]/30 animate-ping pointer-events-none" />
+          </div>
+
+          <span className="text-[10px] font-mono font-bold tracking-[0.3em] text-[#a1c398] uppercase mb-2">
+            Securing Session Boundary
+          </span>
+          
+          <h2 className="text-lg font-bold font-display text-white tracking-tight mb-2">
+            Verifying identity credentials...
+          </h2>
+          
+          <p className="text-[11px] text-gray-500 font-light leading-relaxed max-w-xs mb-6">
+            Evaluating active cryptographic tokens and establishing an encrypted database connection handshake.
+          </p>
+
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900/50 border border-white/5 rounded-full text-[9px] font-mono text-gray-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#a1c398]" />
+            <span>Establishing secure state listener...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full relative flex flex-col justify-between overflow-hidden p-6 md:p-8 lg:p-12 max-w-[1920px] mx-auto bg-black">
       
@@ -511,11 +616,14 @@ export default function App() {
       <NavigationHeader
         activeRole={activeRole}
         onRoleChange={setActiveRole}
-        onOpenLogin={() => {
+        onOpenLogin={async () => {
           if (activeRole !== "GUEST") {
-            setActiveRole("GUEST");
-            setUserEmail("guest@framez.my");
-            addAuditLog("System", "User logged out of active workspace.", "info");
+            try {
+              await signOut(auth);
+              addAuditLog("System", "User logged out of active workspace.", "info");
+            } catch (err) {
+              console.error("Logout failed:", err);
+            }
           } else {
             setLoginOpen(true);
           }
@@ -582,18 +690,18 @@ export default function App() {
                 <span className="text-[10px] font-mono text-gray-500 uppercase">Interactive Switch:</span>
                 {(["CLIENT", "CREW", "OWNER", "DEVELOPER"] as Role[]).map((r) => {
                   const active = activeRole === r;
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => {
-                        setActiveRole(r);
-                        if (r === "CLIENT") setUserEmail("nexcraftsystems@gmail.com");
-                        else if (r === "CREW") setUserEmail("crew@framez.my");
-                        else if (r === "OWNER") setUserEmail("irfan@framez.my");
-                        else if (r === "DEVELOPER") setUserEmail("dev@framez.my");
-                        
-                        addAuditLog("Workspace", `Quick-switched active workspace view to ${r}.`, "info");
-                      }}
+                    return (
+                      <button
+                        key={r}
+                        onClick={() => {
+                          setActiveRole(r);
+                          if (r === "CLIENT") setUserEmail("nexcraftsystems@gmail.com");
+                          else if (r === "CREW") setUserEmail("crew@framez.my");
+                          else if (r === "OWNER") setUserEmail("irfan@framez.my");
+                          else if (r === "DEVELOPER") setUserEmail("nexcraftsystems@gmail.com");
+                          
+                          addAuditLog("Workspace", `Quick-switched active workspace view to ${r}.`, "info");
+                        }}
                       className={`text-[9px] font-bold font-mono uppercase px-2.5 py-1 rounded-md transition-all ${
                         active
                           ? "bg-[#799351] border border-[#a1c398] text-white shadow-md"

@@ -25,6 +25,9 @@ import {
 } from "lucide-react";
 import { PACKAGES, STATES_MAP, ADDONS } from "../data";
 import { Package, Booking, Testimonial } from "../types";
+import { db } from "../firebase";
+import { setDoc, doc } from "firebase/firestore";
+import { hashPassword, generateSalt } from "../utils/crypto";
 
 interface WebsitePagesProps {
   currentSection: string;
@@ -172,7 +175,7 @@ export default function WebsitePages({
   };
 
   // Submit Reservation Action
-  const handleSubmitBooking = () => {
+  const handleSubmitBooking = async () => {
     if (!clientName || !clientEmail || !clientPhone || !portalPassword) {
       alert("Please fill in your contact information and create a portal password to submit your booking.");
       return;
@@ -206,11 +209,35 @@ export default function WebsitePages({
       portalPassword: portalPassword || "123456", // default if blank
     };
 
-    onNewBooking(newBookingObj);
-    setGeneratedBookingId(newId);
-    setBookingCompleted(true);
-    if (onClearPreselectedPackage) {
-      onClearPreselectedPackage();
+    try {
+      // Create their GSSO secure credential record in central database immediately!
+      const salt = generateSalt();
+      const hash = await hashPassword(portalPassword, salt);
+      const cleanEmail = clientEmail.trim().toLowerCase();
+
+      const newAccountRecord = {
+        id: "acc_client_" + Math.random().toString(36).substring(2, 9),
+        email: cleanEmail,
+        name: clientName.trim(),
+        role: "CLIENT",
+        accessStatus: "ACTIVE_VERIFIED",
+        clientBookingIds: [newId],
+        passwordSalt: salt,
+        passwordHash: hash,
+        firstTimeLogin: false, // already personalized!
+      };
+
+      await setDoc(doc(db, "accounts", newAccountRecord.id), newAccountRecord);
+
+      onNewBooking(newBookingObj);
+      setGeneratedBookingId(newId);
+      setBookingCompleted(true);
+      if (onClearPreselectedPackage) {
+        onClearPreselectedPackage();
+      }
+    } catch (error) {
+      console.error("Failed to automatically register client account:", error);
+      alert("❌ Automated account registration protocol failed. Please verify credentials and submit again.");
     }
   };
 
@@ -732,11 +759,13 @@ export default function WebsitePages({
                       <select
                         value={wizardService}
                         onChange={(e) => setWizardService(e.target.value)}
-                        className="p-4 bg-neutral-950 border border-white/10 rounded-2xl text-sm text-white outline-none focus:border-[#799351] cursor-pointer"
+                        className="p-4 bg-neutral-950 border border-white/10 rounded-2xl text-sm text-white outline-none focus:border-[#799351] cursor-pointer w-full"
                       >
-                        <option value="classics">Classics Experience (RM 599 / 3 Hrs)</option>
-                        <option value="platinum">Platinum Royal Experience (RM 699 / 3 Hrs)</option>
-                        <option value="grand_luxe">Grand Luxe Experience (RM 799 / 4 Hrs)</option>
+                        {PACKAGES.map((pkg) => (
+                          <option key={pkg.id} value={pkg.id}>
+                            {pkg.name} (RM {pkg.price} / {pkg.durationHrs} Hrs)
+                          </option>
+                        ))}
                       </select>
                     </div>
 

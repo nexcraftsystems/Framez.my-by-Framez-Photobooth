@@ -98,8 +98,9 @@ export interface FireAccount {
 
 // Initial default real accounts
 export const DEFAULT_DEMO_ACCOUNTS: FireAccount[] = [
-  { id: "acc_dev", email: "nexcraftsystems@gmail.com", name: "Nexcraft Developer", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
+  { id: "acc_dev", email: "nexcraftsystems@google.com", name: "Nexcraft Developer", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
   { id: "acc_crew", email: "wanahmadzaimwr99@gmail.com", name: "Wan Ahmad Zaim", role: "CREW", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
+  { id: "acc_dev_gmail", email: "nexcraftsystems@gmail.com", name: "Nexcraft Developer (Gmail)", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
 ];
 
 /**
@@ -109,15 +110,30 @@ export async function initializeFirestoreDb() {
   try {
     const accountsRef = collection(db, ACCOUNTS_COLLECTION);
     
-    // Check developer account
-    const devQuery = query(accountsRef, where("email", "==", "nexcraftsystems@gmail.com"));
+    // Check developer account (Google)
+    const devQuery = query(accountsRef, where("email", "==", "nexcraftsystems@google.com"));
     const devSnap = await getDocs(devQuery);
     if (devSnap.empty) {
-      console.log("Seeding missing developer account: nexcraftsystems@gmail.com");
+      console.log("Seeding missing developer account: nexcraftsystems@google.com");
       const devSalt = generateSalt();
       const devHash = await hashPassword("Framez123", devSalt);
       const finalDev: FireAccount = {
         ...DEFAULT_DEMO_ACCOUNTS[0],
+        passwordSalt: devSalt,
+        passwordHash: devHash
+      };
+      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalDev.id), finalDev);
+    }
+
+    // Check developer account (Gmail)
+    const devGmailQuery = query(accountsRef, where("email", "==", "nexcraftsystems@gmail.com"));
+    const devGmailSnap = await getDocs(devGmailQuery);
+    if (devGmailSnap.empty) {
+      console.log("Seeding missing developer account: nexcraftsystems@gmail.com");
+      const devSalt = generateSalt();
+      const devHash = await hashPassword("Framez123", devSalt);
+      const finalDev: FireAccount = {
+        ...DEFAULT_DEMO_ACCOUNTS[2],
         passwordSalt: devSalt,
         passwordHash: devHash
       };

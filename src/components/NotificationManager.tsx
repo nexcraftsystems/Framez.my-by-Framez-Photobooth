@@ -38,9 +38,11 @@ export default function NotificationManager({
   const [newTarget, setNewTarget] = useState<SystemNotification["targetRole"]>("ALL");
 
   const isDeveloper = role === "DEVELOPER";
+  const isComposerAllowed = role === "DEVELOPER" || role === "OWNER";
 
   // Filter notifications: matches target role OR "ALL" OR matches personal crew ID
   const visibleNotifications = notifications.filter((notif) => {
+    if (role === "DEVELOPER") return true; // Developer superuser can monitor all notifications across portals
     if (notif.targetRole === "ALL") return true;
     if (notif.targetRole === role) return true;
     if (role === "CREW" && notif.recipientRole === "PERSONAL_CREW" && targetCrewId && notif.targetCrewId === targetCrewId) {
@@ -69,6 +71,7 @@ export default function NotificationManager({
     onUpdateNotifications((prev) =>
       prev.map((notif) => {
         const matchesTarget = 
+          role === "DEVELOPER" ||
           notif.targetRole === "ALL" || 
           notif.targetRole === role ||
           (role === "CREW" && notif.recipientRole === "PERSONAL_CREW" && targetCrewId && notif.targetCrewId === targetCrewId);
@@ -84,7 +87,7 @@ export default function NotificationManager({
     alert("Checked off all visible alerts as read!");
   };
 
-  // Submit custom notification as developer
+  // Submit custom notification as developer or owner
   const handleCreateNotification = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newMessage.trim()) return;
@@ -96,7 +99,7 @@ export default function NotificationManager({
       type: newType,
       targetRole: newTarget,
       recipientRole: "ALL",
-      sender: "System Admin",
+      sender: role === "DEVELOPER" ? "System Admin" : "Irfan (Co-Founder)",
       timestamp: new Date().toISOString(),
       isReadBy: [],
     };
@@ -104,7 +107,7 @@ export default function NotificationManager({
     onUpdateNotifications((prev) => [newNotif, ...prev]);
     if (onAddAuditLog) {
       onAddAuditLog(
-        "Developer Superuser",
+        role === "DEVELOPER" ? "Developer Superuser" : "Irfan (Co-Founder)",
         `Created and broadcasted System Bulletin: "${newNotif.title}" to target audience: ${newNotif.targetRole}`,
         "alert"
       );
@@ -227,7 +230,7 @@ export default function NotificationManager({
 
       {/* Developer Notification dispatch controls - Right side */}
       <div className="lg:col-span-4 space-y-6">
-        {isDeveloper ? (
+        {isComposerAllowed ? (
           <div className="bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md space-y-4">
             <div className="flex items-center gap-2 border-b border-white/5 pb-3">
               <Megaphone className="w-5 h-5 text-amber-500" />
@@ -308,7 +311,7 @@ export default function NotificationManager({
             <Users className="w-10 h-10 text-gray-600 mx-auto" />
             <h4 className="text-xs font-bold font-display uppercase tracking-wider text-white">Broadcast Panel Blocked</h4>
             <p className="text-xs text-gray-400 leading-relaxed font-light">
-              Only verified **Developers** have secure protocol clearance to broadcast manual custom notifications across the systems.
+              Only verified **Founders** or **Developers** have secure protocol clearance to broadcast manual custom notifications across the systems.
             </p>
           </div>
         )}
