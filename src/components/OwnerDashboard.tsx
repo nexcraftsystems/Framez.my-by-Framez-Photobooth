@@ -41,7 +41,7 @@ import {
   ExternalLink
 } from "lucide-react";
 import { collection, doc, setDoc, query, where, onSnapshot, deleteDoc, getDocs, writeBatch } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../firebase";
+import { db, handleFirestoreError, OperationType, mapFirestoreDocToFireAccount, mapFireAccountToFirestoreDoc, saveRecordWithUserBackup } from "../firebase";
 import { 
   ResponsiveContainer, 
   LineChart, 
@@ -277,11 +277,11 @@ export default function OwnerDashboard({
   }, []);
 
   useEffect(() => {
-    const accountsRef = collection(db, "accounts");
+    const accountsRef = collection(db, "users");
     const unsubscribe = onSnapshot(accountsRef, (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
-        list.push(doc.data());
+        list.push(mapFirestoreDocToFireAccount(doc.data()));
       });
       if (list.length > 0) {
         // De-duplicate accounts list by ID to prevent any key duplication
@@ -343,7 +343,7 @@ export default function OwnerDashboard({
     };
 
     try {
-      await setDoc(doc(db, "chats", msgId), newMsg);
+      await saveRecordWithUserBackup("chats", msgId, newMsg);
       onAddAuditLog(
         role === "DEVELOPER" ? "Developer Admin" : "Owner Portal",
         `Sent secure coordination reply to ${currentClientBooking?.clientName || "Client"} via Chat Coordination Hub`,
@@ -520,7 +520,7 @@ export default function OwnerDashboard({
       };
 
       // 2. Save in Firestore accounts collection
-      await setDoc(doc(db, "accounts", newId), newAcc);
+      await setDoc(doc(db, "users", newId), mapFireAccountToFirestoreDoc(newAcc));
 
       setGoogleAccounts((prev) => {
         if (prev.some((a) => a.id === newAcc.id)) return prev;
@@ -555,7 +555,7 @@ export default function OwnerDashboard({
       if (!targetAcc) return;
 
       const updatedAcc = { ...targetAcc, role: targetRole };
-      await setDoc(doc(db, "accounts", accId), updatedAcc);
+      await setDoc(doc(db, "users", accId), mapFireAccountToFirestoreDoc(updatedAcc));
 
       onAddAuditLog(
         "Developer",
@@ -588,7 +588,7 @@ export default function OwnerDashboard({
           const bookingIds = bookingsToRemove.map(b => b.id);
 
           // Delete from Firestore 'accounts'
-          const accountsQuery = query(collection(db, "accounts"), where("email", "==", userEmail));
+          const accountsQuery = query(collection(db, "users"), where("email", "==", userEmail));
           const accountsSnap = await getDocs(accountsQuery);
           const batch1 = writeBatch(db);
           accountsSnap.forEach((doc) => {
@@ -729,6 +729,18 @@ export default function OwnerDashboard({
     );
   };
 
+  const handleTestiImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setTestiImageUrl(reader.result as string);
+        onAddAuditLog("Developer", `Uploaded memory picture as base64 asset: ${file.name}`, "info");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Developer Only: Testimonials customizers
   const handleSaveTestimonial = (e: React.FormEvent) => {
     e.preventDefault();
@@ -796,7 +808,7 @@ export default function OwnerDashboard({
         : [...targetAcc.clientBookingIds, bookingId];
 
       const updatedAcc = { ...targetAcc, clientBookingIds: updatedIds };
-      await setDoc(doc(db, "accounts", accId), updatedAcc);
+      await setDoc(doc(db, "users", accId), mapFireAccountToFirestoreDoc(updatedAcc));
 
       onAddAuditLog(
         "Developer",
@@ -2001,123 +2013,153 @@ export default function OwnerDashboard({
             </div>
 
             {/* Testimonials Manager (7 cols) */}
-            <div className="lg:col-span-7 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md space-y-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white">
-                  ✍️ Memories Testimonials builder ({testimonialsList.length})
-                </h3>
-                {editingTestimonialId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingTestimonialId(null);
-                      setTestiLogo("");
-                      setTestiQuote("");
-                      setTestiAuthor("");
-                      setTestiImageUrl("");
-                    }}
-                    className="text-[10px] font-mono font-bold text-amber-500 underline"
-                  >
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
-
-              {/* Form to Create/Edit */}
-              <form onSubmit={handleSaveTestimonial} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-black/40 border border-white/5 rounded-2xl">
-                <div className="flex flex-col">
-                  <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Client/Agency Logo Text</label>
-                  <input
-                    type="text"
-                    required
-                    value={testiLogo}
-                    onChange={(e) => setTestiLogo(e.target.value)}
-                    placeholder="e.g. LOGOIPSUM"
-                    className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
-                  />
+            {role === "DEVELOPER" ? (
+              <div className="lg:col-span-7 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md space-y-6">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white">
+                    ✍️ Memories Testimonials builder ({testimonialsList.length})
+                  </h3>
+                  {editingTestimonialId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingTestimonialId(null);
+                        setTestiLogo("");
+                        setTestiQuote("");
+                        setTestiAuthor("");
+                        setTestiImageUrl("");
+                      }}
+                      className="text-[10px] font-mono font-bold text-amber-500 underline"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
                 </div>
 
-                <div className="flex flex-col">
-                  <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Author & Role</label>
-                  <input
-                    type="text"
-                    required
-                    value={testiAuthor}
-                    onChange={(e) => setTestiAuthor(e.target.value)}
-                    placeholder="e.g. - Siti & Amri, Selangor"
-                    className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
-                  />
-                </div>
+                {/* Form to Create/Edit */}
+                <form onSubmit={handleSaveTestimonial} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-black/40 border border-white/5 rounded-2xl">
+                  <div className="flex flex-col">
+                    <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Client/Agency Logo Text</label>
+                    <input
+                      type="text"
+                      required
+                      value={testiLogo}
+                      onChange={(e) => setTestiLogo(e.target.value)}
+                      placeholder="e.g. LOGOIPSUM"
+                      className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
+                    />
+                  </div>
 
-                <div className="flex flex-col md:col-span-2">
-                  <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Testimonial Quote</label>
-                  <textarea
-                    required
-                    rows={2}
-                    value={testiQuote}
-                    onChange={(e) => setTestiQuote(e.target.value)}
-                    placeholder="Provide pristine agency words..."
-                    className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351] resize-none"
-                  />
-                </div>
+                  <div className="flex flex-col">
+                    <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Author & Role</label>
+                    <input
+                      type="text"
+                      required
+                      value={testiAuthor}
+                      onChange={(e) => setTestiAuthor(e.target.value)}
+                      placeholder="e.g. - Siti & Amri, Selangor"
+                      className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
+                    />
+                  </div>
 
-                <div className="flex flex-col md:col-span-2">
-                  <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Portrait / Memory Photo URL</label>
-                  <input
-                    type="url"
-                    required
-                    value={testiImageUrl}
-                    onChange={(e) => setTestiImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
-                  />
-                </div>
+                  <div className="flex flex-col md:col-span-2">
+                    <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Testimonial Quote</label>
+                    <textarea
+                      required
+                      rows={2}
+                      value={testiQuote}
+                      onChange={(e) => setTestiQuote(e.target.value)}
+                      placeholder="Provide pristine agency words..."
+                      className="p-3 bg-[#070708] border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351] resize-none"
+                    />
+                  </div>
 
-                <button
-                  type="submit"
-                  className="md:col-span-2 py-2.5 bg-[#799351] hover:bg-[#5f743e] text-white font-semibold rounded-lg text-xs uppercase tracking-wider transition-all"
-                >
-                  {editingTestimonialId ? "Update Testimonial Card" : "Publish Testimonial Memory"}
-                </button>
-              </form>
-
-              {/* Active testimonial list */}
-              <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
-                {testimonialsList.map((t) => (
-                  <div key={t.id} className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={t.imageUrl}
-                        alt="souvenir"
-                        referrerPolicy="no-referrer"
-                        className="w-10 h-10 object-cover rounded-lg shrink-0"
+                  <div className="flex flex-col md:col-span-2">
+                    <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase text-[#a1c398]">Portrait / Memory Photo (Link or File Upload)</label>
+                    <div className="flex flex-col sm:flex-row gap-2.5">
+                      <input
+                        type="url"
+                        value={testiImageUrl}
+                        onChange={(e) => setTestiImageUrl(e.target.value)}
+                        placeholder="https://images.unsplash.com/..."
+                        className="flex-1 p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-[#799351]"
                       />
-                      <div className="min-w-0">
-                        <span className="text-xs font-bold text-white block truncate">{t.logo}</span>
-                        <span className="text-[10px] text-gray-400 font-mono block truncate">{t.author}</span>
+                      <div className="relative shrink-0 flex items-center">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleTestiImageUpload}
+                          id="memories-file-uploader"
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="memories-file-uploader"
+                          className="px-4 py-3 bg-[#799351]/20 border border-[#799351]/40 hover:bg-[#799351]/30 text-[#a1c398] font-semibold text-xs rounded-xl uppercase tracking-wider cursor-pointer text-center block whitespace-nowrap"
+                        >
+                          Upload Photo File
+                        </label>
                       </div>
                     </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleEditTestimonialClick(t)}
-                        className="text-[10px] font-mono bg-neutral-800 text-gray-300 hover:bg-neutral-700 px-2 py-1 rounded"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteTestimonial(t.id)}
-                        className="text-[10px] font-mono bg-red-950/40 text-red-400 hover:bg-red-900/40 px-2 py-1 rounded border border-red-500/10"
-                      >
-                        Delete
-                      </button>
-                    </div>
                   </div>
-                ))}
+
+                  <button
+                    type="submit"
+                    className="md:col-span-2 py-2.5 bg-[#799351] hover:bg-[#5f743e] text-white font-semibold rounded-lg text-xs uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    {editingTestimonialId ? "Update Testimonial Card" : "Publish Testimonial Memory"}
+                  </button>
+                </form>
+
+                {/* Active testimonial list */}
+                <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                  {testimonialsList.map((t) => (
+                    <div key={t.id} className="p-3.5 bg-black/30 border border-white/5 rounded-xl flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={t.imageUrl}
+                          alt="souvenir"
+                          referrerPolicy="no-referrer"
+                          className="w-10 h-10 object-cover rounded-lg shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-white block truncate">{t.logo}</span>
+                          <span className="text-[10px] text-gray-400 font-mono block truncate">{t.author}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditTestimonialClick(t)}
+                          className="text-[10px] font-mono bg-neutral-800 text-gray-300 hover:bg-neutral-700 px-2 py-1 rounded cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTestimonial(t.id)}
+                          className="text-[10px] font-mono bg-red-950/40 text-red-400 hover:bg-red-900/40 px-2 py-1 rounded border border-red-500/10 cursor-pointer"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="lg:col-span-7 bg-neutral-900/40 border border-white/5 rounded-[2rem] p-8 backdrop-blur-md flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-14 h-14 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                  <Shield className="w-6 h-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-display">Developer Isolation</h3>
+                  <p className="text-xs text-gray-400 max-w-sm leading-relaxed">
+                    Only authorized developers (Nexcraft Systems) can upload pictures, change, delete, or publish new memories to the live Customer Feedback Wall.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>

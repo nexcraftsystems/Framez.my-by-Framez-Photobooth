@@ -16,20 +16,12 @@ import {
   where
 } from "firebase/firestore";
 import { hashPassword, generateSalt } from "./utils/crypto";
+import { Role } from "./types";
 
-// Config parsed from firebase-applet-config.json
-const firebaseConfig = {
-  projectId: "gen-lang-client-0053075220",
-  appId: "1:770855153685:web:45dcc91a0c2c9d69d61e1c",
-  apiKey: "AIzaSyDmsd-jjq00krsaoeh7c9GdGvIg_3aR28Y",
-  authDomain: "gen-lang-client-0053075220.firebaseapp.com",
-  databaseId: "ai-studio-framezmy-cc1b96a0-657d-4f2d-8eff-8202cfbb32c1",
-  storageBucket: "gen-lang-client-0053075220.firebasestorage.app",
-  messagingSenderId: "770855153685"
-};
+import firebaseConfig from "../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.databaseId);
+export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -80,9 +72,29 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 // Collection helper names
-export const ACCOUNTS_COLLECTION = "accounts";
+export const ACCOUNTS_COLLECTION = "users";
 export const AUDIT_LOGS_COLLECTION = "audit_logs";
 export const BOOKINGS_COLLECTION = "bookings";
+
+/**
+ * Saves a document to a root collection AND backs it up under the current authenticated user's UserId in Firestore.
+ */
+export async function saveRecordWithUserBackup(collectionName: string, docId: string, data: any) {
+  try {
+    // Save to the main collection
+    await setDoc(doc(db, collectionName, docId), data);
+
+    // Save under current user's ID
+    const userId = auth.currentUser?.uid;
+    if (userId) {
+      await setDoc(doc(db, "users", userId, collectionName, docId), data);
+      console.log(`Successfully saved backup of ${collectionName}/${docId} under users/${userId}`);
+    }
+  } catch (error) {
+    console.error(`Failed to save record ${collectionName}/${docId} with user backup:`, error);
+    throw error;
+  }
+}
 
 export interface FireAccount {
   id: string;
@@ -94,6 +106,31 @@ export interface FireAccount {
   passwordHash?: string;
   passwordSalt?: string;
   firstTimeLogin?: boolean;
+}
+
+export function mapFirestoreDocToFireAccount(docData: any): FireAccount {
+  let uppercaseRole: Role = "CLIENT";
+  if (docData.role) {
+    const roleStr = docData.role.toUpperCase();
+    if (["CLIENT", "CREW", "OWNER", "DEVELOPER", "GUEST", "ADMIN"].includes(roleStr)) {
+      if (roleStr === "ADMIN") {
+        uppercaseRole = "DEVELOPER";
+      } else {
+        uppercaseRole = roleStr as Role;
+      }
+    }
+  }
+  return {
+    ...docData,
+    role: uppercaseRole
+  };
+}
+
+export function mapFireAccountToFirestoreDoc(acc: FireAccount): any {
+  return {
+    ...acc,
+    role: acc.role ? acc.role.toLowerCase() : "client"
+  };
 }
 
 // Initial default real accounts
@@ -122,7 +159,7 @@ export async function initializeFirestoreDb() {
         passwordSalt: devSalt,
         passwordHash: devHash
       };
-      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalDev.id), finalDev);
+      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalDev.id), mapFireAccountToFirestoreDoc(finalDev));
     }
 
     // Check developer account (Gmail)
@@ -137,7 +174,7 @@ export async function initializeFirestoreDb() {
         passwordSalt: devSalt,
         passwordHash: devHash
       };
-      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalDev.id), finalDev);
+      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalDev.id), mapFireAccountToFirestoreDoc(finalDev));
     }
 
     // Check crew account
@@ -152,7 +189,7 @@ export async function initializeFirestoreDb() {
         passwordSalt: crewSalt,
         passwordHash: crewHash
       };
-      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalCrew.id), finalCrew);
+      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalCrew.id), mapFireAccountToFirestoreDoc(finalCrew));
     }
   } catch (error) {
     console.error("Error initializing Firestore database accounts:", error);
@@ -199,7 +236,7 @@ export async function getFireAccounts(): Promise<FireAccount[]> {
     const qSnap = await getDocs(collection(db, ACCOUNTS_COLLECTION));
     const list: FireAccount[] = [];
     qSnap.forEach((doc) => {
-      list.push(doc.data() as FireAccount);
+      list.push(mapFirestoreDocToFireAccount(doc.data()));
     });
     return list;
   } catch (e) {
@@ -213,7 +250,7 @@ export async function getFireAccounts(): Promise<FireAccount[]> {
  */
 export async function saveFireAccount(acc: FireAccount) {
   try {
-    await setDoc(doc(db, ACCOUNTS_COLLECTION, acc.id), acc);
+    await setDoc(doc(db, ACCOUNTS_COLLECTION, acc.id), mapFireAccountToFirestoreDoc(acc));
   } catch (e) {
     console.error("Failed to save Firestore account", e);
   }

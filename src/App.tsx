@@ -27,7 +27,7 @@ import DeveloperDashboard from "./components/DeveloperDashboard";
 import WebsitePages from "./components/WebsitePages";
 
 import { motion, AnimatePresence } from "motion/react";
-import { initializeFirestoreDb, db, addFirestoreAuditLog, handleFirestoreError, OperationType, auth, FireAccount } from "./firebase";
+import { initializeFirestoreDb, db, addFirestoreAuditLog, handleFirestoreError, OperationType, auth, FireAccount, mapFirestoreDocToFireAccount, mapFireAccountToFirestoreDoc, saveRecordWithUserBackup } from "./firebase";
 import { collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, query, where } from "firebase/firestore";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 
@@ -165,36 +165,40 @@ export default function App() {
       if (user) {
         try {
           const email = (user.email || "").trim().toLowerCase();
-          const q = query(collection(db, "accounts"), where("email", "==", email));
+          const q = query(collection(db, "users"), where("email", "==", email));
           const qSnap = await getDocs(q);
 
           let role: Role = "CLIENT";
           let resolvedEmail = email;
+          let existingAccount: FireAccount | null = null;
 
           if (!qSnap.empty) {
-            const accData = qSnap.docs[0].data() as FireAccount;
-            role = accData.role;
-            resolvedEmail = accData.email;
+            existingAccount = mapFirestoreDocToFireAccount(qSnap.docs[0].data());
+            role = existingAccount.role;
+            resolvedEmail = existingAccount.email;
           } else {
-            // Auto-provision user account document on first secure federated login
+            // Determine default role based on email if no record exists
             const isDev = email === "nexcraftsystems@gmail.com";
             const isOwner = email === "nexcraftsystems@google.com";
-            const resolvedRole: Role = isDev ? "DEVELOPER" : isOwner ? "OWNER" : "CLIENT";
-
-            const newId = user.uid;
-            const newAccount: FireAccount = {
-              id: newId,
-              email: email,
-              name: user.displayName || (isDev ? "Nexcraft Developer" : isOwner ? "Nexcraft Owner" : "Google Client User"),
-              role: resolvedRole,
-              accessStatus: "ACTIVE_VERIFIED",
-              clientBookingIds: [],
-              firstTimeLogin: false
-            };
-            await setDoc(doc(db, "accounts", newId), newAccount);
-            role = resolvedRole;
+            role = isDev ? "DEVELOPER" : isOwner ? "OWNER" : "CLIENT";
             resolvedEmail = email;
           }
+
+          const newId = user.uid;
+          const finalAccount: FireAccount = {
+            id: newId,
+            email: resolvedEmail,
+            name: existingAccount?.name || user.displayName || (email === "nexcraftsystems@gmail.com" ? "Nexcraft Developer" : "Client User"),
+            role: role,
+            accessStatus: existingAccount?.accessStatus || "ACTIVE_VERIFIED",
+            clientBookingIds: existingAccount?.clientBookingIds || [],
+            firstTimeLogin: existingAccount?.firstTimeLogin !== undefined ? existingAccount.firstTimeLogin : false,
+            passwordHash: existingAccount?.passwordHash,
+            passwordSalt: existingAccount?.passwordSalt
+          };
+
+          // Always save/update in Firestore under users/{UserId} with all their profile information on sign-in
+          await setDoc(doc(db, "users", newId), mapFireAccountToFirestoreDoc(finalAccount));
 
           setActiveRole(role);
           setUserEmail(resolvedEmail);
@@ -274,9 +278,32 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, "notifications");
     });
 
+    // 3. Sync Testimonials List
+    const unsubscribeTestimonials = onSnapshot(collection(db, "testimonials"), async (snapshot) => {
+      if (snapshot.empty) {
+        // Seed DEFAULT_TESTIMONIALS to Firestore
+        try {
+          const promises = DEFAULT_TESTIMONIALS.map(t => setDoc(doc(db, "testimonials", t.id), t));
+          await Promise.all(promises);
+        } catch (err) {
+          console.error("Failed to seed default testimonials to Firestore", err);
+        }
+      } else {
+        const list: Testimonial[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as Testimonial);
+        });
+        setTestimonialsList(list);
+      }
+    }, (error) => {
+      console.error("Testimonials sync error:", error);
+      handleFirestoreError(error, OperationType.GET, "testimonials");
+    });
+
     return () => {
       unsubscribeBookings();
       unsubscribeNotifications();
+      unsubscribeTestimonials();
     };
   }, []);
 
@@ -319,7 +346,7 @@ export default function App() {
   const handleNewBooking = async (newBooking: Booking) => {
     try {
       // 1. Write booking to Firestore
-      await setDoc(doc(db, "bookings", newBooking.id), newBooking);
+      await saveRecordWithUserBackup("bookings", newBooking.id, newBooking);
       
       // 2. Add an audit log in Firestore
       await addFirestoreAuditLog(
@@ -341,9 +368,31 @@ export default function App() {
         isReadBy: [],
         type: "INFO"
       };
-      await setDoc(doc(db, "notifications", notifId), newNotif);
+      await saveRecordWithUserBackup("notifications", notifId, newNotif);
     } catch (err) {
       console.error("Failed to add new booking to Firestore:", err);
+    }
+  };
+
+  const handleUpdateTestimonials = async (updatedList: Testimonial[]) => {
+    setTestimonialsList(updatedList);
+    try {
+      // Get all existing docs in collection "testimonials" and delete any that are not in the updatedList
+      const snapshot = await getDocs(collection(db, "testimonials"));
+      const deletePromises: Promise<void>[] = [];
+      snapshot.forEach((docSnap) => {
+        const id = docSnap.id;
+        if (!updatedList.some(t => t.id === id)) {
+          deletePromises.push(deleteDoc(doc(db, "testimonials", id)));
+        }
+      });
+      await Promise.all(deletePromises);
+
+      // Set/update the remaining documents
+      const savePromises = updatedList.map(t => setDoc(doc(db, "testimonials", t.id), t));
+      await Promise.all(savePromises);
+    } catch (err) {
+      console.error("Error syncing testimonials to Firestore:", err);
     }
   };
 
@@ -352,7 +401,7 @@ export default function App() {
     if (!booking) return;
     const updated = { ...booking, status: "BOOKED" as const, receiptApproved: true, rejectionReason: undefined };
     try {
-      await setDoc(doc(db, "bookings", bookingId), updated);
+      await saveRecordWithUserBackup("bookings", bookingId, updated);
       await addFirestoreAuditLog(
         "Irfan (Co-Founder)",
         `Approved payment receipt for booking reference ${bookingId}.`,
@@ -368,7 +417,7 @@ export default function App() {
     if (!booking) return;
     const updated = { ...booking, status: "REJECTED" as const, receiptApproved: false, rejectionReason: reason };
     try {
-      await setDoc(doc(db, "bookings", bookingId), updated);
+      await saveRecordWithUserBackup("bookings", bookingId, updated);
       await addFirestoreAuditLog(
         "Irfan (Co-Founder)",
         `Rejected payment receipt for booking reference ${bookingId}. Reason: ${reason}`,
@@ -384,7 +433,7 @@ export default function App() {
     if (!booking) return;
     const updated = { ...booking, [isSecond ? "crewLeadId2" : "crewLeadId"]: crewId };
     try {
-      await setDoc(doc(db, "bookings", bookingId), updated);
+      await saveRecordWithUserBackup("bookings", bookingId, updated);
       
       const crewName = crewLeads.find((c) => c.id === crewId)?.name || "Unassigned";
       await addFirestoreAuditLog(
@@ -406,7 +455,7 @@ export default function App() {
           isReadBy: [],
           type: "TASK"
         };
-        await setDoc(doc(db, "notifications", notifId), newNotif);
+        await saveRecordWithUserBackup("notifications", notifId, newNotif);
       }
     } catch (err) {
       console.error("Failed to assign crew in Firestore:", err);
@@ -772,7 +821,7 @@ export default function App() {
                 isCalendarSynced={isCalendarSynced}
                 onToggleCalendarSync={() => setIsCalendarSynced(!isCalendarSynced)}
                 testimonialsList={testimonialsList}
-                onUpdateTestimonials={setTestimonialsList}
+                onUpdateTestimonials={handleUpdateTestimonials}
                 locations={locations}
                 onUpdateLocations={setLocations}
                 inventory={inventory}

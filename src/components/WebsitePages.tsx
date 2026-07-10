@@ -23,9 +23,9 @@ import {
   Minus,
   Instagram
 } from "lucide-react";
-import { PACKAGES, STATES_MAP, ADDONS } from "../data";
+import { PACKAGES, STATES_MAP, ADDONS, DEFAULT_TESTIMONIALS } from "../data";
 import { Package, Booking, Testimonial } from "../types";
-import { db } from "../firebase";
+import { db, mapFireAccountToFirestoreDoc, FireAccount } from "../firebase";
 import { setDoc, doc } from "firebase/firestore";
 import { hashPassword, generateSalt } from "../utils/crypto";
 
@@ -117,6 +117,41 @@ export default function WebsitePages({
       const scrollAmount = clientWidth * 0.85;
       const scrollTo = direction === "left" ? scrollLeft - scrollAmount : scrollLeft + scrollAmount;
       packagesScrollRef.current.scrollTo({ left: scrollTo, behavior: "smooth" });
+    }
+  };
+
+  // Memories scroll slider ref and handler
+  const railRef = useRef<HTMLDivElement>(null);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    if (currentSection !== "locations") return;
+    const rail = railRef.current;
+    if (!rail) return;
+    
+    let animationId: number;
+    const scrollSpeed = 0.5; // super slow continuous speed (pixels per frame)
+    
+    const animate = () => {
+      if (!isHovered) {
+        rail.scrollLeft += scrollSpeed;
+        if (rail.scrollLeft >= rail.scrollWidth - rail.clientWidth - 2) {
+          rail.scrollLeft = 0; // Seamless loop
+        }
+      }
+      animationId = requestAnimationFrame(animate);
+    };
+    
+    animationId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationId);
+  }, [currentSection, isHovered]);
+
+  const scrollMemories = (direction: "left" | "right") => {
+    if (railRef.current) {
+      const { scrollLeft, clientWidth } = railRef.current;
+      const scrollAmount = clientWidth * 0.5;
+      const scrollTo = direction === "left" ? scrollLeft - scrollAmount : scrollLeft + scrollAmount;
+      railRef.current.scrollTo({ left: scrollTo, behavior: "smooth" });
     }
   };
 
@@ -215,7 +250,7 @@ export default function WebsitePages({
       const hash = await hashPassword(portalPassword, salt);
       const cleanEmail = clientEmail.trim().toLowerCase();
 
-      const newAccountRecord = {
+      const newAccountRecord: FireAccount = {
         id: "acc_client_" + Math.random().toString(36).substring(2, 9),
         email: cleanEmail,
         name: clientName.trim(),
@@ -227,7 +262,7 @@ export default function WebsitePages({
         firstTimeLogin: false, // already personalized!
       };
 
-      await setDoc(doc(db, "accounts", newAccountRecord.id), newAccountRecord);
+      await setDoc(doc(db, "users", newAccountRecord.id), mapFireAccountToFirestoreDoc(newAccountRecord));
 
       onNewBooking(newBookingObj);
       setGeneratedBookingId(newId);
@@ -422,69 +457,145 @@ export default function WebsitePages({
         </motion.div>
       )}
 
-      {currentSection === "locations" && (
-        <motion.div
-          key="locations"
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          variants={slideVariants}
-          transition={slideTransition}
-          className="w-full relative bg-white text-neutral-900 rounded-[2.5rem] p-8 md:p-12 lg:p-16 border border-neutral-200 overflow-hidden min-h-[90vh] flex flex-col justify-between shadow-2xl"
-        >
-          {/* Subtle elegant agency top lines */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#799351] via-[#a1c398] to-[#799351]" />
-          
-          <div className="max-w-[1400px] mx-auto w-full space-y-12">
-            {/* Top Typography & Navigation row */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-neutral-100 pb-8">
-              <div className="space-y-3.5 max-w-2xl">
-                <span className="text-[10px] font-mono font-bold text-[#799351] uppercase tracking-[0.2em] block">
-                  MEMORIES & SHARED JOY
-                </span>
-                <h2 className="text-4xl md:text-5xl lg:text-6xl font-display font-medium text-neutral-950 tracking-tight leading-none">
-                  What Clients Say <br />
-                  <span className="italic font-light text-neutral-600">About the Experience</span>
-                </h2>
+      {currentSection === "locations" && (() => {
+        const list = testimonialsList.length > 0 ? testimonialsList : DEFAULT_TESTIMONIALS;
+        const doubledList = [...list, ...list, ...list, ...list]; // Quadruple to ensure seamless loop
+        
+        const cols = [];
+        let testiIdx = 0;
+        while (testiIdx < doubledList.length) {
+          if (testiIdx % 3 === 0) {
+            cols.push({
+              type: "tall",
+              items: [doubledList[testiIdx]]
+            });
+            testiIdx += 1;
+          } else {
+            const items = [doubledList[testiIdx]];
+            if (testiIdx + 1 < doubledList.length) {
+              items.push(doubledList[testiIdx + 1]);
+            }
+            cols.push({
+              type: "stacked",
+              items
+            });
+            testiIdx += 2;
+          }
+        }
 
+        return (
+          <motion.div
+            key="locations"
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={slideVariants}
+            transition={slideTransition}
+            className="w-full relative rounded-[2.5rem] p-8 md:p-12 lg:p-16 overflow-hidden min-h-[90vh] flex flex-col justify-between shadow-2xl transition-all"
+            style={{ backgroundColor: "#edd3c4" }}
+          >
+            {/* Subtle elegant agency top lines */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#799351] via-[#a1c398] to-[#799351]" />
+            
+            <div className="max-w-[1400px] mx-auto w-full space-y-12">
+              {/* Top Typography & Navigation row */}
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 border-b border-[#c2aa9d]/30 pb-8">
+                <div className="space-y-3.5 max-w-2xl">
+                  <span className="text-[10px] font-mono font-bold text-[#8a5b3a] uppercase tracking-[0.2em] block">
+                    MEMORIES & SHARED JOY
+                  </span>
+                  <h2 className="text-4xl md:text-5xl lg:text-6xl font-display font-medium text-[#4a3225] tracking-tight leading-none">
+                    What Clients Say <br />
+                    <span className="italic font-light text-[#634839]">About the Experience</span>
+                  </h2>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center max-w-xl">
+                  <p className="text-xs md:text-sm text-[#5e4436] font-light leading-relaxed">
+                    We've captured over 150,000 memories – so when you join us, you're in great (and well-loved) company. Every day, more people discover how capturing frames leads to endless smiles.
+                  </p>
+
+                  {/* Slider Arrow buttons */}
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => scrollMemories("left")}
+                      className="w-12 h-12 rounded-full border border-[#c2aa9d]/40 flex items-center justify-center text-[#4a3225] hover:bg-[#e4cbbe] transition-all shadow-sm"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollMemories("right")}
+                      className="w-12 h-12 rounded-full bg-[#4a3225] flex items-center justify-center text-white hover:bg-[#342217] transition-all shadow-md"
+                    >
+                      <ArrowRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              {/* Slider Arrow buttons */}
-              <div className="flex items-center gap-2.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const prevIdx = (testimonialsList.length + (testimonialsList.findIndex(t => t.id === testimonialsList[0]?.id) - 1)) % testimonialsList.length;
-                    // Simply shift list representation or trigger manual scroll
-                    const btn = document.getElementById("testimonial-prev-trigger");
-                    if (btn) btn.click();
-                  }}
-                  id="memories-prev-btn"
-                  className="w-12 h-12 rounded-full border border-neutral-200 flex items-center justify-center text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900 transition-all shadow-sm"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const btn = document.getElementById("testimonial-next-trigger");
-                    if (btn) btn.click();
-                  }}
-                  id="memories-next-btn"
-                  className="w-12 h-12 rounded-full bg-neutral-900 flex items-center justify-center text-white hover:bg-neutral-800 transition-all shadow-md"
-                >
-                  <ArrowRight className="w-5 h-5" />
-                </button>
+              {/* Continuous Scrolling Gallery */}
+              <div 
+                ref={railRef}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+                className="w-full overflow-x-auto scrollbar-none flex gap-6 py-6"
+                style={{ scrollSnapType: "x proximity" }}
+              >
+                {cols.map((col, colIdx) => (
+                  <div 
+                    key={colIdx} 
+                    className={`flex flex-col gap-6 shrink-0 ${col.type === "tall" ? "w-[300px] md:w-[350px]" : "w-[240px] md:w-[280px]"}`}
+                  >
+                    {col.items.map((item, itemIdx) => (
+                      <div
+                        key={`${item.id}-${colIdx}-${itemIdx}`}
+                        className="group relative overflow-hidden rounded-[2.5rem] bg-[#e4cbbe]/50 border border-[#c2aa9d]/20 shadow-sm cursor-pointer"
+                        style={{ 
+                          height: col.type === "tall" ? "460px" : "218px" 
+                        }}
+                      >
+                        {/* Image */}
+                        <img
+                          src={item.imageUrl || "https://cdn.sceneai.art/Hero%20section%20image/3654d348-a98c-4320-bc14-3f458b45a50d.png"}
+                          alt={item.author}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover transform transition-transform duration-[1200ms] ease-out group-hover:scale-105"
+                        />
+
+                        {/* Aesthetic Shopping Badge Overlaid Bottom Left */}
+                        <div className="absolute bottom-5 left-5 w-10 h-10 rounded-full bg-[#f28e2b] text-white flex items-center justify-center shadow-md transform group-hover:scale-110 transition-transform duration-300 z-10">
+                          <svg className="w-4 h-4 fill-none stroke-current stroke-2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                          </svg>
+                        </div>
+
+                        {/* Hover Info Overlay */}
+                        <div className="absolute inset-0 bg-[#342217]/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6 text-white rounded-[2.5rem] z-20">
+                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-amber-200">{item.logo || "FRAMEZ.MY"}</span>
+                          <p className="text-xs font-sans font-light italic leading-relaxed mt-1.5">"{item.quote}"</p>
+                          <span className="text-[10px] font-mono mt-3 text-white/80">{item.author}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination/Scroll Indicator */}
+              <div className="flex justify-center items-center gap-2 pt-2">
+                <div className="h-1 w-24 bg-[#c2aa9d]/30 rounded-full overflow-hidden relative">
+                  <div 
+                    className="absolute top-0 bottom-0 left-0 bg-[#4a3225] transition-all duration-300 w-1/3"
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-[#5e4436]">DRAG OR USE ARROWS TO EXPLORE</span>
               </div>
             </div>
-
-            {/* Testimonial Active Display Controller */}
-            <TestimonialCarousel testimonials={testimonialsList} />
-          </div>
-
-
-        </motion.div>
-      )}
+          </motion.div>
+        );
+      })()}
 
       {/* CORE FEATURE: MAIN WEBSITE CALENDAR & STEP-BY-STEP RESERVATION WIZARD */}
       {currentSection === "calendar" && (

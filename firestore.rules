@@ -1,45 +1,11 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Default catch-all deny rule
+    // Permissive rules for development/preview to allow seamless booking, chat, notifications, and user profiles
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Helper: is user authenticated
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Helper: Validate basic string format
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    // accounts collection rules
-    match /accounts/{accountId} {
-      allow read, write: if true;
-    }
-
-    // bookings collection rules
-    match /bookings/{bookingId} {
-      allow read, write: if true;
-    }
-
-    // audit_logs collection rules
-    match /audit_logs/{logId} {
-      allow read, write: if true;
-    }
-
-    // chats collection rules
-    match /chats/{chatId} {
-      allow read, write: if true;
-    }
-
-    // notifications collection rules
-    match /notifications/{notificationId} {
       allow read, write: if true;
     }
   }
 }
+

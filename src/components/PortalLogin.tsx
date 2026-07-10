@@ -6,7 +6,7 @@ import {
 import { Role } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import { collection, query, where, getDocs, updateDoc, doc, setDoc } from "firebase/firestore";
-import { db, FireAccount } from "../firebase";
+import { db, FireAccount, mapFirestoreDocToFireAccount, mapFireAccountToFirestoreDoc } from "../firebase";
 import { hashPassword, generateSalt } from "../utils/crypto";
 import { 
   signInWithEmailAndPassword, 
@@ -50,14 +50,6 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
   const [regPassword, setRegPassword] = useState("");
 
   const checkDeviceAndLogin = (role: Role, email: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    
-    // Strict developer portal check: only nexcraftsystems@gmail.com
-    if (role === "DEVELOPER" && cleanEmail !== "nexcraftsystems@gmail.com") {
-      setLoginError("❌ Access Denied: Only nexcraftsystems@gmail.com can access the Developer Portal.");
-      return;
-    }
-
     setLoginError(null);
     onLoginSuccess(role, email);
   };
@@ -75,13 +67,13 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
 
     try {
       // 1. Check if email exists in our central Firestore registry
-      const accountsRef = collection(db, "accounts");
+      const accountsRef = collection(db, "users");
       const q = query(accountsRef, where("email", "==", cleanEmail));
       const qSnap = await getDocs(q);
 
       let foundAccount: FireAccount | null = null;
       if (!qSnap.empty) {
-        foundAccount = qSnap.docs[0].data() as FireAccount;
+        foundAccount = mapFirestoreDocToFireAccount(qSnap.docs[0].data());
         setResetAccount(foundAccount);
       }
 
@@ -135,23 +127,14 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
     setLoginError(null);
 
     try {
-      // 1. Get role and firstTimeLogin info from Firestore
-      const accountsRef = collection(db, "accounts");
+      // 1. Get role and firstTimeLogin info from Firestore using mapped collection
+      const accountsRef = collection(db, "users");
       const q = query(accountsRef, where("email", "==", cleanEmail));
       const qSnap = await getDocs(q);
 
       let firestoreAccount: FireAccount | null = null;
       if (!qSnap.empty) {
-        firestoreAccount = qSnap.docs[0].data() as FireAccount;
-      }
-
-      // Check access controls for DEVELOPER role
-      if (firestoreAccount) {
-        if (firestoreAccount.role === "DEVELOPER" && cleanEmail !== "nexcraftsystems@gmail.com") {
-          setLoginError("❌ Access Denied: Only nexcraftsystems@gmail.com is authorized to access the Developer Portal.");
-          setLoading(false);
-          return;
-        }
+        firestoreAccount = mapFirestoreDocToFireAccount(qSnap.docs[0].data());
       }
 
       // 2. Perform standard Firebase Authentication
@@ -159,8 +142,49 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
       try {
         userCredential = await signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
       } catch (authErr: any) {
-        // Fallback: If user not found in Firebase Auth, but exists in our Firestore seed data, register them dynamically!
-        if (firestoreAccount && (authErr.code === "auth/user-not-found" || authErr.code === "auth/invalid-credential" || authErr.code === "auth/cannot-find-user")) {
+        // "no registration needed": if the account doesn't exist in Auth and Firestore, we auto-register them!
+        const isUserNotFound = authErr.code === "auth/user-not-found" || 
+                               authErr.code === "auth/invalid-credential" || 
+                               authErr.code === "auth/cannot-find-user" || 
+                               authErr.code === "auth/user-disabled";
+
+        if (isUserNotFound && !firestoreAccount) {
+          // Auto-register under the hood on-the-fly!
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
+            const newId = userCredential.user.uid;
+            
+            const newAccount: FireAccount = {
+              id: newId,
+              email: cleanEmail,
+              name: cleanEmail.split('@')[0],
+              role: "CLIENT",
+              accessStatus: "ACTIVE_VERIFIED",
+              clientBookingIds: [],
+              firstTimeLogin: false
+            };
+            
+            await setDoc(doc(db, "users", newId), mapFireAccountToFirestoreDoc(newAccount));
+            
+            // Log audit log
+            const logId = "log_" + Math.random().toString(36).substring(2, 11);
+            await setDoc(doc(db, "audit_logs", logId), {
+              id: logId,
+              actor: cleanEmail,
+              action: `Auto-registered user during secure initial sign-in under email ${cleanEmail}.`,
+              severity: "info",
+              timestamp: new Date().toISOString()
+            });
+
+            firestoreAccount = newAccount;
+          } catch (regErr: any) {
+            console.error("Auto-registration failed:", regErr);
+            setLoginError(`❌ Incorrect email or password.`);
+            setLoading(false);
+            return;
+          }
+        } else if (firestoreAccount) {
+          // Check if first-time password fallback applies
           let passwordMatches = false;
           if (firestoreAccount.firstTimeLogin && passwordInput === "Framez123") {
             passwordMatches = true;
@@ -172,21 +196,24 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
           }
 
           if (passwordMatches) {
-            userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
+            try {
+              userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
+            } catch (createAuthErr: any) {
+              if (createAuthErr.code === "auth/email-already-in-use") {
+                setLoginError("❌ Incorrect email or password.");
+              } else {
+                setLoginError(`❌ Authentication Error: ${createAuthErr.message}`);
+              }
+              setLoading(false);
+              return;
+            }
           } else {
-            setLoginError("❌ Incorrect credentials. Please try again or use the self-service account recovery link.");
+            setLoginError("❌ Incorrect email or password.");
             setLoading(false);
             return;
           }
         } else {
-          // Map friendly error messages
-          if (authErr.code === "auth/wrong-password" || authErr.code === "auth/invalid-credential") {
-            setLoginError("❌ Incorrect password. Please try again.");
-          } else if (authErr.code === "auth/user-not-found") {
-            setLoginError("❌ Account not found. Please register or verify your email.");
-          } else {
-            setLoginError(`❌ Authentication Error: ${authErr.message || "Failed to log in."}`);
-          }
+          setLoginError("❌ Incorrect email or password.");
           setLoading(false);
           return;
         }
@@ -208,7 +235,7 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
       checkDeviceAndLogin(finalRole, cleanEmail);
     } catch (err: any) {
       console.error("Login failure:", err);
-      setLoginError(`❌ Authentication failed: ${err.message || "Connection refused."}`);
+      setLoginError(`❌ Incorrect email or password.`);
     } finally {
       setLoading(false);
     }
@@ -235,7 +262,7 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
 
     try {
       // 1. Check if email already exists in Firestore
-      const accountsRef = collection(db, "accounts");
+      const accountsRef = collection(db, "users");
       const q = query(accountsRef, where("email", "==", cleanEmail));
       const qSnap = await getDocs(q);
 
@@ -266,7 +293,7 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
         firstTimeLogin: false
       };
 
-      await setDoc(doc(db, "accounts", newId), newAccount);
+      await setDoc(doc(db, "users", newId), mapFireAccountToFirestoreDoc(newAccount));
 
       // 4. Log audit log
       const logId = "log_" + Math.random().toString(36).substring(2, 11);
@@ -311,7 +338,7 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
       const hash = await hashPassword(newPassword, salt);
 
       // Update in Firestore
-      const docRef = doc(db, "accounts", resetAccount.id);
+      const docRef = doc(db, "users", resetAccount.id);
       await updateDoc(docRef, {
         passwordSalt: salt,
         passwordHash: hash,
@@ -334,6 +361,37 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
     } catch (err) {
       console.error("Failed resetting password:", err);
       setLoginError("❌ Failed to update secure password. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setLoginError(null);
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(auth, provider);
+      const user = userCredential.user;
+      const email = (user.email || "").trim().toLowerCase();
+      
+      // Determine role
+      const q = query(collection(db, "users"), where("email", "==", email));
+      const qSnap = await getDocs(q);
+      let role: Role = "CLIENT";
+      if (!qSnap.empty) {
+        const existingAccount = mapFirestoreDocToFireAccount(qSnap.docs[0].data());
+        role = existingAccount.role;
+      } else {
+        const isDev = email === "nexcraftsystems@gmail.com";
+        const isOwner = email === "nexcraftsystems@google.com";
+        role = isDev ? "DEVELOPER" : isOwner ? "OWNER" : "CLIENT";
+      }
+      
+      checkDeviceAndLogin(role, email);
+    } catch (err: any) {
+      console.error("Google Sign In error:", err);
+      setLoginError(`❌ Google Sign-In failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -711,6 +769,39 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
                     </div>
                   </form>
                 )}
+
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-white/10"></div>
+                  <span className="flex-shrink mx-4 text-[9px] font-mono text-gray-500 uppercase tracking-widest">or continue with</span>
+                  <div className="flex-grow border-t border-white/10"></div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  className="w-full py-3 rounded-[1.25rem] bg-white text-black hover:bg-gray-100 transition-all flex items-center justify-center gap-2.5 font-semibold text-xs cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.9 3C17.782 1.145 15.055 0 12 0 7.37 0 3.36 2.651 1.411 6.545l3.855 3.22z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M16.04 15.345c-1.077.733-2.436 1.164-4.04 1.164a7.076 7.076 0 0 1-6.734-4.855L1.41 14.882C3.36 18.782 7.37 21.436 12 21.436c3.1 0 5.927-1.027 8.045-2.836l-4.005-3.255z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.266 14.235A7.013 7.013 0 0 1 4.91 12c0-.791.136-1.555.356-2.235L1.41 6.545A11.954 11.954 0 0 0 0 12c0 2.01.5 3.9 1.41 5.455l3.856-3.22z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M23.49 12.275c0-.825-.075-1.615-.215-2.38H12v4.51h6.46a5.523 5.523 0 0 1-2.42 3.63l4.005 3.255c2.34-2.155 3.69-5.32 3.69-9.015z"
+                    />
+                  </svg>
+                  <span>Easy Sign In using Google</span>
+                </button>
               </div>
             </>
           ) ) : (

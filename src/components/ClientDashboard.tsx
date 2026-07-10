@@ -31,7 +31,7 @@ import {
   X
 } from "lucide-react";
 import { collection, doc, query, where, getDocs, setDoc, updateDoc, addDoc, onSnapshot, orderBy } from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "../firebase";
+import { db, handleFirestoreError, OperationType, saveRecordWithUserBackup } from "../firebase";
 
 interface ClientDashboardProps {
   userEmail: string;
@@ -213,8 +213,8 @@ export default function ClientDashboard({
     };
 
     try {
-      // Save directly to Firestore
-      await setDoc(doc(db, "bookings", newBookingId), newBooking);
+      // Save directly to Firestore with user backup
+      await saveRecordWithUserBackup("bookings", newBookingId, newBooking);
 
       // Save to local hooks
       onNewBooking(newBooking);
@@ -253,7 +253,7 @@ export default function ClientDashboard({
         secondPaymentRejected: false,
         secondPaymentRejectionReason: ""
       };
-      await setDoc(doc(db, "bookings", activeBooking.id), updated);
+      await saveRecordWithUserBackup("bookings", activeBooking.id, updated);
       if (onUpdateBooking) onUpdateBooking(updated);
       alert("📤 2nd Payment Receipt uploaded! Our accounts team will review and unlock your memories.");
     } catch (e) {
@@ -280,8 +280,8 @@ export default function ClientDashboard({
     };
 
     try {
-      // Save to Firestore chats collection
-      await setDoc(doc(db, "chats", msgId), newMsg);
+      // Save to Firestore chats collection with user backup
+      await saveRecordWithUserBackup("chats", msgId, newMsg);
       setChatInput("");
       setChatFileUrl(null);
       setChatFileName(null);
@@ -289,14 +289,15 @@ export default function ClientDashboard({
       // Fast auto-response simulator if no crew online
       setTimeout(async () => {
         const autoId = "msg_reply_" + Math.random().toString(36).substr(2, 9);
-        await setDoc(doc(db, "chats", autoId), {
+        const autoReply = {
           id: autoId,
           clientId: bookingId,
           clientName: "Crew Assistant (AI)",
           sender: "CREW",
           text: `Hey, we have received your message! Irfan or one of our active crew members will look into this layout/prop requirement right away.`,
           timestamp: new Date().toISOString()
-        });
+        };
+        await saveRecordWithUserBackup("chats", autoId, autoReply);
       }, 2000);
     } catch (err) {
       console.error("Failed sending message:", err);
@@ -325,7 +326,7 @@ export default function ClientDashboard({
         reviewRating: clientRating,
         reviewText: clientTestimonial
       };
-      await setDoc(doc(db, "bookings", activeBooking.id), updated);
+      await saveRecordWithUserBackup("bookings", activeBooking.id, updated);
       if (onUpdateBooking) onUpdateBooking(updated);
       setSubmittedReview(true);
       alert("💖 Thank you for sharing your experience! Your review has been logged to the master feedback wall.");
