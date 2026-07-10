@@ -2,10 +2,88 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+  
     // Permissive rules for development/preview to allow seamless booking, chat, notifications, and user profiles
     match /{document=**} {
       allow read, write: if true;
     }
+    
+    // Function to check if the user is signed in
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Function to get a user document and check their role
+    function userRole(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role;
+    }
+
+    // Admin or Developer check
+    function isAdminOrDeveloper(userId) {
+      return isSignedIn() &&
+             (userRole(userId) == 'admin' || userRole(userId) == 'developer');
+    }
+
+    // Owner check
+    function isOwner(userId) {
+      return isSignedIn() &&
+             userRole(userId) == 'owner';
+    }
+
+    // Crew check
+    function isCrew(userId) {
+      return isSignedIn() &&
+             userRole(userId) == 'crew';
+    }
+
+    // Client check
+    function isClient(userId) {
+      return isSignedIn() &&
+             userRole(userId) == 'client';
+    }
+
+    // User collection rules
+    match /users/{userId} {
+      // Users can create their own account (automatically assigned role is 'client')
+      allow create: if isSignedIn() && userId == request.auth.uid;
+
+      // Users can read and update their own profile
+      allow read, update: if isSignedIn() && request.auth.uid == userId;
+
+      // Admin or Developer can create other roles (admin, owner, crew)
+      allow create, update: if isAdminOrDeveloper(userId) &&
+                              request.resource.data.role in ['admin', 'owner', 'crew'];
+
+      // Only Admin or Developer can delete user accounts
+      allow delete: if isAdminOrDeveloper(userId);
+
+      // Nested paths under user (e.g., subcollections) - same logic
+      match /{allPaths=**} {
+        allow read, update, write: if isSignedIn() &&
+          (request.auth.uid == userId || isAdminOrDeveloper(userId));
+      }
+    }
+
+    // Portal access (separate paths for each role portal)
+
+    // Developer portal access
+    match /developerPortal/{document} {
+      allow read, write: if isAdminOrDeveloper(request.auth.uid);
+    }
+
+    // Owner portal access
+    match /ownerPortal/{document} {
+      allow read: if isOwner(request.auth.uid);
+    }
+
+    // Crew portal access
+    match /crewPortal/{document} {
+      allow read: if isCrew(request.auth.uid);
+    }
+
+    // Client portal access
+    match /clientPortal/{document} {
+      allow read: if isClient(request.auth.uid);
+    }
   }
 }
-

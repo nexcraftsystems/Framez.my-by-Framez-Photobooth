@@ -165,11 +165,77 @@ export default function OwnerDashboard({
     ];
   });
 
+  // Accounts Filtering and Sorting State
+  const [accountsSearchQuery, setAccountsSearchQuery] = useState("");
+  const [accountsSelectedRole, setAccountsSelectedRole] = useState<"ALL" | Role>("ALL");
+  const [accountsSortField, setAccountsSortField] = useState<"name" | "email" | "role" | "status">("name");
+  const [accountsSortOrder, setAccountsSortOrder] = useState<"asc" | "desc">("asc");
+
   // Account creation state
   const [newAccEmail, setNewAccEmail] = useState("");
   const [newAccName, setNewAccName] = useState("");
   const [newAccRole, setNewAccRole] = useState<Role>("CLIENT");
   const [selectedAccessBooking, setSelectedAccessBooking] = useState<string>("");
+
+  const devCount = googleAccounts.filter(a => a.role === "DEVELOPER").length;
+  const ownerCount = googleAccounts.filter(a => a.role === "OWNER").length;
+  const crewCount = googleAccounts.filter(a => a.role === "CREW").length;
+  const clientCount = googleAccounts.filter(a => a.role === "CLIENT").length;
+
+  const toggleAccountsSort = (field: "name" | "email" | "role" | "status") => {
+    if (accountsSortField === field) {
+      setAccountsSortOrder(prev => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setAccountsSortField(field);
+      setAccountsSortOrder("asc");
+    }
+  };
+
+  const filteredAndSortedAccounts = React.useMemo(() => {
+    let result = [...googleAccounts];
+
+    // Filter by role
+    if (accountsSelectedRole !== "ALL") {
+      result = result.filter(acc => acc.role === accountsSelectedRole);
+    }
+
+    // Filter by search query
+    if (accountsSearchQuery.trim()) {
+      const q = accountsSearchQuery.toLowerCase();
+      result = result.filter(
+        acc =>
+          (acc.name || "").toLowerCase().includes(q) ||
+          (acc.email || "").toLowerCase().includes(q) ||
+          (acc.id || "").toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    result.sort((a, b) => {
+      let valA: string = "";
+      let valB: string = "";
+
+      if (accountsSortField === "name") {
+        valA = (a.name || "").toLowerCase();
+        valB = (b.name || "").toLowerCase();
+      } else if (accountsSortField === "email") {
+        valA = (a.email || "").toLowerCase();
+        valB = (b.email || "").toLowerCase();
+      } else if (accountsSortField === "role") {
+        valA = (a.role || "").toLowerCase();
+        valB = (b.role || "").toLowerCase();
+      } else if (accountsSortField === "status") {
+        valA = (a.accessStatus || "").toLowerCase();
+        valB = (b.accessStatus || "").toLowerCase();
+      }
+
+      if (valA < valB) return accountsSortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return accountsSortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [googleAccounts, accountsSelectedRole, accountsSearchQuery, accountsSortField, accountsSortOrder]);
 
   // Testimonials custom builder state
   const [editingTestimonialId, setEditingTestimonialId] = useState<string | null>(null);
@@ -281,15 +347,18 @@ export default function OwnerDashboard({
     const unsubscribe = onSnapshot(accountsRef, (snapshot) => {
       const list: any[] = [];
       snapshot.forEach((doc) => {
-        list.push(mapFirestoreDocToFireAccount(doc.data()));
+        const data = doc.data();
+        const parsed = mapFirestoreDocToFireAccount(data);
+        if (!parsed.id) {
+          parsed.id = doc.id;
+        }
+        list.push(parsed);
       });
-      if (list.length > 0) {
-        // De-duplicate accounts list by ID to prevent any key duplication
-        const uniqueList = list.filter((acc, index, self) =>
-          self.findIndex(a => a.id === acc.id) === index
-        );
-        setGoogleAccounts(uniqueList);
-      }
+      // De-duplicate accounts list by ID to prevent any key duplication
+      const uniqueList = list.filter((acc, index, self) =>
+        self.findIndex(a => a.id === acc.id) === index
+      );
+      setGoogleAccounts(uniqueList);
     }, (error) => {
       console.error("Firestore accounts snapshot error", error);
     });
@@ -1830,8 +1899,8 @@ export default function OwnerDashboard({
       {activeMenu === "accounts" && (role === "DEVELOPER" || role === "OWNER") && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Create new user accounts (5 columns) */}
-          <div className="lg:col-span-5 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md">
+          {/* Create new user accounts (4 columns for optimal balance) */}
+          <div className="lg:col-span-4 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md">
             <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white mb-4">
               🔑 Register User Account
             </h3>
@@ -1856,12 +1925,12 @@ export default function OwnerDashboard({
                   required
                   value={newAccEmail}
                   onChange={(e) => setNewAccEmail(e.target.value)}
-                  placeholder="e.g. sitiaminah@gmail.com or siti@nexcraft.com"
+                  placeholder="e.g. sitiaminah@gmail.com"
                   className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-amber-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col">
                   <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Access Role</label>
                   <select
@@ -1870,9 +1939,9 @@ export default function OwnerDashboard({
                     className="p-3 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-amber-500"
                   >
                     <option value="CLIENT">CLIENT</option>
-                    <option value="CREW">CREW / FIELD STAFF</option>
-                    <option value="OWNER">CO-FOUNDER / OWNER</option>
-                    <option value="DEVELOPER">DEVELOPER SUPERUSER</option>
+                    <option value="CREW">CREW</option>
+                    <option value="OWNER">OWNER</option>
+                    <option value="DEVELOPER">DEVELOPER</option>
                   </select>
                 </div>
 
@@ -1902,61 +1971,254 @@ export default function OwnerDashboard({
             </form>
           </div>
 
-          {/* Accounts list (7 columns) */}
-          <div className="lg:col-span-7 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md">
-            <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white mb-4">
-              🛡️ Registered Active Credentials ({googleAccounts.length})
-            </h3>
+          {/* Accounts list (8 columns for modern tabular design) */}
+          <div className="lg:col-span-8 bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md flex flex-col">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-sm font-bold font-display uppercase tracking-wider text-white">
+                  🛡️ Credentials & Role Access Controls
+                </h3>
+                <span className="text-[10px] text-gray-400 font-mono block mt-1">
+                  Active directory synchronized with live Firestore database
+                </span>
+              </div>
 
-            <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
-              {googleAccounts.map((acc) => (
-                <div key={acc.id} className="p-4 bg-black/40 border border-white/5 rounded-xl space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-bold text-white block">{acc.name}</span>
-                      <span className="text-[10px] text-gray-400 block font-mono">{acc.email}</span>
-                    </div>
+              {/* Real-time search inside table */}
+              <div className="relative max-w-xs w-full">
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={accountsSearchQuery}
+                  onChange={(e) => setAccountsSearchQuery(e.target.value)}
+                  placeholder="Search name, email, or user ID..."
+                  className="w-full pl-9 pr-3 py-1.5 bg-neutral-950 border border-white/10 rounded-xl text-xs text-white outline-none focus:border-amber-500"
+                />
+                {accountsSearchQuery && (
+                  <button
+                    onClick={() => setAccountsSearchQuery("")}
+                    className="absolute right-2.5 top-2 text-[10px] text-gray-500 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
 
-                    <span className="text-[8px] font-mono font-bold bg-amber-950/40 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full uppercase">
-                      active credentials
-                    </span>
-                  </div>
+            {/* Quick role-filtering tabs/pills with dynamically calculated user counts */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-4 mb-4 border-b border-white/5 scrollbar-thin">
+              <button
+                type="button"
+                onClick={() => setAccountsSelectedRole("ALL")}
+                className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-lg border transition-all ${
+                  accountsSelectedRole === "ALL"
+                    ? "bg-amber-950/40 border-amber-500 text-amber-400"
+                    : "bg-black/40 border-white/5 text-gray-400 hover:text-white"
+                }`}
+              >
+                All ({googleAccounts.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountsSelectedRole("DEVELOPER")}
+                className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-lg border transition-all ${
+                  accountsSelectedRole === "DEVELOPER"
+                    ? "bg-purple-950/40 border-purple-500 text-purple-400"
+                    : "bg-black/40 border-white/5 text-gray-400 hover:text-white"
+                }`}
+              >
+                Developers ({devCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountsSelectedRole("OWNER")}
+                className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-lg border transition-all ${
+                  accountsSelectedRole === "OWNER"
+                    ? "bg-red-950/40 border-red-500 text-red-400"
+                    : "bg-black/40 border-white/5 text-gray-400 hover:text-white"
+                }`}
+              >
+                Owners ({ownerCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountsSelectedRole("CREW")}
+                className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-lg border transition-all ${
+                  accountsSelectedRole === "CREW"
+                    ? "bg-amber-950/40 border-amber-500 text-amber-400"
+                    : "bg-black/40 border-white/5 text-gray-400 hover:text-white"
+                }`}
+              >
+                Crew ({crewCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccountsSelectedRole("CLIENT")}
+                className={`text-[10px] font-mono uppercase px-3 py-1.5 rounded-lg border transition-all ${
+                  accountsSelectedRole === "CLIENT"
+                    ? "bg-emerald-950/40 border-emerald-500 text-emerald-400"
+                    : "bg-black/40 border-white/5 text-gray-400 hover:text-white"
+                }`}
+              >
+                Clients ({clientCount})
+              </button>
+            </div>
 
-                  {/* Role modification & access control */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-2.5 text-xs w-full">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-500 font-mono text-[10px]">Permission Role:</span>
-                        <select
-                          value={acc.role}
-                          onChange={(e) => handleUpdateAccountRole(acc.id, e.target.value as Role)}
-                          className="bg-neutral-950 text-white border border-white/10 rounded px-2 py-0.5 text-[11px] outline-none"
-                        >
-                          <option value="CLIENT">CLIENT</option>
-                          <option value="CREW">CREW</option>
-                          <option value="OWNER">OWNER</option>
-                          <option value="DEVELOPER">DEVELOPER</option>
-                        </select>
-                      </div>
-
-                      <div className="flex items-center gap-1 bg-amber-950/20 px-2 py-0.5 rounded border border-amber-500/10 text-[10px] text-amber-400 font-mono">
-                        <span>Accessible Bookings:</span>
-                        <strong>{acc.clientBookingIds.length > 0 ? acc.clientBookingIds.join(", ") : "All"}</strong>
-                      </div>
-                    </div>
-
-                    {(role === "DEVELOPER" || role === "OWNER") && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteUser(acc.email, acc.name)}
-                        className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900/40 border border-red-500/20 text-red-400 rounded text-[10px] font-mono font-bold uppercase transition-all"
-                      >
-                        Delete Profile
-                      </button>
-                    )}
-                  </div>
+            {/* Structured responsive directory table */}
+            <div className="flex-1 overflow-y-auto max-h-[420px] pr-1">
+              {filteredAndSortedAccounts.length === 0 ? (
+                <div className="p-8 text-center bg-black/20 rounded-2xl border border-white/5">
+                  <p className="text-xs text-gray-500">No active matching credentials found in directory.</p>
                 </div>
-              ))}
+              ) : (
+                <div className="overflow-x-auto border border-white/5 rounded-2xl bg-black/40">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/10 bg-white/5 text-[9px] font-mono text-gray-400 uppercase tracking-wider font-semibold">
+                        <th 
+                          className="p-3.5 cursor-pointer hover:text-white transition-colors select-none"
+                          onClick={() => toggleAccountsSort("name")}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>User Name & Email</span>
+                            {accountsSortField === "name" && (
+                              <span className="text-amber-500 font-bold">{accountsSortOrder === "asc" ? "↑" : "↓"}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="p-3.5 text-center">User ID</th>
+                        <th 
+                          className="p-3.5 cursor-pointer hover:text-white transition-colors select-none"
+                          onClick={() => toggleAccountsSort("role")}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>Assign Role</span>
+                            {accountsSortField === "role" && (
+                              <span className="text-amber-500 font-bold">{accountsSortOrder === "asc" ? "↑" : "↓"}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="p-3.5">Scope & Bookings</th>
+                        <th className="p-3.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {filteredAndSortedAccounts.map((acc) => {
+                        const isDevAcc = acc.role === "DEVELOPER";
+                        const isOwnerAcc = acc.role === "OWNER";
+                        const isCrewAcc = acc.role === "CREW";
+                        const isClientAcc = acc.role === "CLIENT";
+
+                        // Initials for avatar bubble
+                        const initials = (acc.name || "U")
+                          .split(" ")
+                          .map((n: string) => n[0])
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase();
+
+                        return (
+                          <tr key={acc.id} className="hover:bg-white/5 transition-colors text-xs">
+                            {/* Profile Info */}
+                            <td className="p-3">
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] font-mono border ${
+                                  isDevAcc
+                                    ? "bg-purple-950/30 text-purple-400 border-purple-500/20"
+                                    : isOwnerAcc
+                                    ? "bg-red-950/30 text-red-400 border-red-500/20"
+                                    : isCrewAcc
+                                    ? "bg-amber-950/30 text-amber-400 border-amber-500/20"
+                                    : "bg-emerald-950/30 text-emerald-400 border-emerald-500/20"
+                                }`}>
+                                  {initials}
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="font-bold text-white block truncate max-w-[150px]" title={acc.name}>
+                                    {acc.name}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400 font-mono block truncate max-w-[150px]" title={acc.email}>
+                                    {acc.email}
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Shortened ID with quick-copy functionality */}
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(acc.id);
+                                  onAddAuditLog("Workspace", `Copied user identifier details for user ${acc.name}.`, "info");
+                                  triggerCustomAlert("Copied to Clipboard", `Copied ID: "${acc.id}"`);
+                                }}
+                                className="px-2 py-0.5 bg-neutral-900 border border-white/5 rounded hover:border-amber-500/30 hover:bg-neutral-800 transition-all font-mono text-[9px] text-gray-400 active:scale-95"
+                                title="Click to copy unique UID"
+                              >
+                                {acc.id ? (acc.id.startsWith("acc_") ? acc.id : acc.id.substring(0, 8) + "...") : "No ID"}
+                              </button>
+                            </td>
+
+                            {/* Dropdown Select permission update */}
+                            <td className="p-3">
+                              <select
+                                value={acc.role}
+                                onChange={(e) => handleUpdateAccountRole(acc.id, e.target.value as Role)}
+                                className={`bg-neutral-950 text-white border border-white/10 rounded px-2.5 py-1 text-[11px] outline-none font-medium cursor-pointer transition-colors focus:border-amber-500 ${
+                                  isDevAcc
+                                    ? "text-purple-400"
+                                    : isOwnerAcc
+                                    ? "text-red-400"
+                                    : isCrewAcc
+                                    ? "text-amber-400"
+                                    : "text-emerald-400"
+                                }`}
+                              >
+                                <option value="CLIENT">CLIENT</option>
+                                <option value="CREW">CREW</option>
+                                <option value="OWNER">OWNER</option>
+                                <option value="DEVELOPER">DEVELOPER</option>
+                              </select>
+                            </td>
+
+                            {/* Bookings Scope */}
+                            <td className="p-3">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] text-gray-400 font-mono">
+                                  {acc.clientBookingIds && acc.clientBookingIds.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1 max-w-[140px]">
+                                      {acc.clientBookingIds.map((bid: string) => (
+                                        <span key={bid} className="px-1.5 py-0.5 bg-amber-950/20 border border-amber-500/10 text-amber-400 rounded text-[9px] font-bold">
+                                          {bid}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500 italic">Full Portal Scope</span>
+                                  )}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Action columns */}
+                            <td className="p-3 text-right">
+                              {(role === "DEVELOPER" || role === "OWNER") && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteUser(acc.email, acc.name)}
+                                  className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900 border border-red-500/20 text-red-400 hover:text-white rounded text-[10px] font-mono font-bold uppercase transition-all"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
 
