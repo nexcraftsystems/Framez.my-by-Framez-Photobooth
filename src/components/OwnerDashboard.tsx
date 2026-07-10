@@ -889,11 +889,11 @@ export default function OwnerDashboard({
               );
             })}
 
-            {/* Developer Access Controller Option */}
-            {role === "DEVELOPER" && (
+            {/* Assign Portal Option */}
+            {(role === "DEVELOPER" || role === "OWNER") && (
               <button
                 onClick={() => setActiveMenu("accounts")}
-                title={sidebarCollapsed ? "GSSO Access Control" : undefined}
+                title={sidebarCollapsed ? "Assign Portal" : undefined}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${
                   activeMenu === "accounts"
                     ? "bg-amber-950/60 border-amber-500/40 text-amber-400 shadow-lg"
@@ -901,7 +901,7 @@ export default function OwnerDashboard({
                 } ${sidebarCollapsed ? "lg:justify-center" : ""}`}
               >
                 <Key className="w-5 h-5 shrink-0" />
-                {(!sidebarCollapsed || window.innerWidth < 1024) && <span>GSSO Control</span>}
+                {(!sidebarCollapsed || window.innerWidth < 1024) && <span>Assign Portal</span>}
               </button>
             )}
 
@@ -948,7 +948,7 @@ export default function OwnerDashboard({
             {activeMenu === "calendar" && "Master Booking Scheduler Calendar"}
             {activeMenu === "crm" && "AI WhatsApp CRM Coordination Terminal"}
             {activeMenu === "receipts" && "Master Invoice & Receipt Coordination Hub"}
-            {activeMenu === "accounts" && "GSSO Security Credentials & Access Control"}
+            {activeMenu === "accounts" && "Role Assignment & Access Control Portal"}
             {activeMenu === "performance" && "Crew Leads & Performance directory Tracker"}
             {activeMenu === "inventory" && "Central Inventory & Asset Tracker"}
             {activeMenu === "notifications" && "System & Crew Broadcast Notifications Hub"}
@@ -1827,7 +1827,7 @@ export default function OwnerDashboard({
       )}
 
       {/* DEVELOPER ACCESS CONTROLS TABS */}
-      {activeMenu === "accounts" && role === "DEVELOPER" && (
+      {activeMenu === "accounts" && (role === "DEVELOPER" || role === "OWNER") && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* Create new user accounts (5 columns) */}
@@ -1945,7 +1945,7 @@ export default function OwnerDashboard({
                       </div>
                     </div>
 
-                    {role === "DEVELOPER" && (
+                    {(role === "DEVELOPER" || role === "OWNER") && (
                       <button
                         type="button"
                         onClick={() => handleDeleteUser(acc.email, acc.name)}

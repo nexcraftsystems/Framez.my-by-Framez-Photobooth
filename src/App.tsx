@@ -178,7 +178,7 @@ export default function App() {
             resolvedEmail = existingAccount.email;
           } else {
             // Determine default role based on email if no record exists
-            const isDev = email === "nexcraftsystems@gmail.com";
+            const isDev = email === "nexcraftsystems@gmail.com" || email === "wanahmadzaimwr99@gmail.com";
             const isOwner = email === "nexcraftsystems@google.com";
             role = isDev ? "DEVELOPER" : isOwner ? "OWNER" : "CLIENT";
             resolvedEmail = email;
@@ -188,7 +188,7 @@ export default function App() {
           const finalAccount: FireAccount = {
             id: newId,
             email: resolvedEmail,
-            name: existingAccount?.name || user.displayName || (email === "nexcraftsystems@gmail.com" ? "Nexcraft Developer" : "Client User"),
+            name: existingAccount?.name || user.displayName || (email === "nexcraftsystems@gmail.com" || email === "wanahmadzaimwr99@gmail.com" ? "Nexcraft Developer" : "Client User"),
             role: role,
             accessStatus: existingAccount?.accessStatus || "ACTIVE_VERIFIED",
             clientBookingIds: existingAccount?.clientBookingIds || [],

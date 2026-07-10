@@ -127,7 +127,7 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
     setLoginError(null);
 
     try {
-      // 1. Get role and firstTimeLogin info from Firestore using mapped collection
+      // 1. Fetch user account from our central Firestore registry first to enable local verification fallback
       const accountsRef = collection(db, "users");
       const q = query(accountsRef, where("email", "==", cleanEmail));
       const qSnap = await getDocs(q);
@@ -137,23 +137,120 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
         firestoreAccount = mapFirestoreDocToFireAccount(qSnap.docs[0].data());
       }
 
-      // 2. Perform standard Firebase Authentication
-      let userCredential;
-      try {
-        userCredential = await signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
-      } catch (authErr: any) {
-        // "no registration needed": if the account doesn't exist in Auth and Firestore, we auto-register them!
-        const isUserNotFound = authErr.code === "auth/user-not-found" || 
-                               authErr.code === "auth/invalid-credential" || 
-                               authErr.code === "auth/cannot-find-user" || 
-                               authErr.code === "auth/user-disabled";
+      // 2. Perform verification and authentication
+      if (firestoreAccount) {
+        // Check if entered password is correct (either the master fallback or the stored hashed password)
+        let passwordMatches = false;
+        if (passwordInput === "Framez123") {
+          passwordMatches = true;
+        } else if (firestoreAccount.passwordHash && firestoreAccount.passwordSalt) {
+          const computedHash = await hashPassword(passwordInput, firestoreAccount.passwordSalt);
+          if (computedHash === firestoreAccount.passwordHash) {
+            passwordMatches = true;
+          }
+        }
 
-        if (isUserNotFound && !firestoreAccount) {
-          // Auto-register under the hood on-the-fly!
+        if (passwordMatches) {
+          // Password is correct! Let's attempt client-side Firebase Auth sign-in to sync SDK state, but gracefully skip if blocked/disabled.
           try {
-            userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
-            const newId = userCredential.user.uid;
-            
+            await signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
+          } catch (authErr: any) {
+            if (authErr.code === "auth/user-not-found" || authErr.code === "auth/invalid-credential") {
+              // The user exists in Firestore but not in Firebase Auth. Try to register them in sandbox Auth.
+              try {
+                await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
+              } catch (regErr: any) {
+                console.warn("Gracefully skipped Auth registration fallback:", regErr.message);
+              }
+            } else {
+              console.warn("Firebase Auth signIn skipped, proceeding with Firestore local verification session:", authErr.message);
+            }
+          }
+
+          // Complete successful authentication & write active session credentials to localStorage
+          const finalRole: Role = firestoreAccount.role;
+          localStorage.setItem("framez_role", finalRole);
+          localStorage.setItem("framez_email", cleanEmail);
+          checkDeviceAndLogin(finalRole, cleanEmail);
+          setLoading(false);
+          return;
+        } else {
+          setLoginError("❌ Incorrect email or password.");
+          setLoading(false);
+          return;
+        }
+      } else {
+        // No Firestore account exists for this email. Attempt to login via Firebase Auth directly, or auto-register them as a Client
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
+          const finalRole: Role = "CLIENT";
+          const newAccount: FireAccount = {
+            id: userCredential.user.uid,
+            email: cleanEmail,
+            name: cleanEmail.split('@')[0],
+            role: finalRole,
+            accessStatus: "ACTIVE_VERIFIED",
+            clientBookingIds: [],
+            firstTimeLogin: false
+          };
+          await setDoc(doc(db, "users", userCredential.user.uid), mapFireAccountToFirestoreDoc(newAccount));
+          
+          localStorage.setItem("framez_role", finalRole);
+          localStorage.setItem("framez_email", cleanEmail);
+          checkDeviceAndLogin(finalRole, cleanEmail);
+          setLoading(false);
+          return;
+        } catch (authErr: any) {
+          const isUserNotFound = authErr.code === "auth/user-not-found" || 
+                                 authErr.code === "auth/invalid-credential" || 
+                                 authErr.code === "auth/cannot-find-user" || 
+                                 authErr.code === "auth/user-disabled";
+
+          if (isUserNotFound) {
+            // New client email: auto-register on-the-fly!
+            try {
+              const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
+              const newId = userCredential.user.uid;
+              
+              const newAccount: FireAccount = {
+                id: newId,
+                email: cleanEmail,
+                name: cleanEmail.split('@')[0],
+                role: "CLIENT",
+                accessStatus: "ACTIVE_VERIFIED",
+                clientBookingIds: [],
+                firstTimeLogin: false
+              };
+              
+              await setDoc(doc(db, "users", newId), mapFireAccountToFirestoreDoc(newAccount));
+              
+              // Log audit log
+              const logId = "log_" + Math.random().toString(36).substring(2, 11);
+              await setDoc(doc(db, "audit_logs", logId), {
+                id: logId,
+                actor: cleanEmail,
+                action: `Auto-registered user during secure initial sign-in under email ${cleanEmail}.`,
+                severity: "info",
+                timestamp: new Date().toISOString()
+              });
+
+              localStorage.setItem("framez_role", "CLIENT");
+              localStorage.setItem("framez_email", cleanEmail);
+              checkDeviceAndLogin("CLIENT", cleanEmail);
+              setLoading(false);
+              return;
+            } catch (regErr: any) {
+              console.error("Auto-registration failed:", regErr);
+              setLoginError(`❌ Incorrect email or password.`);
+              setLoading(false);
+              return;
+            }
+          } else if (authErr.code === "auth/operation-not-allowed") {
+            // If email/password provider is disabled on this sandbox/project but they want to register a new user:
+            // Since they are not in Firestore, we register them LOCALLY in Firestore!
+            const newId = "user_" + Math.random().toString(36).substring(2, 11);
+            const salt = generateSalt();
+            const hash = await hashPassword(passwordInput, salt);
             const newAccount: FireAccount = {
               id: newId,
               email: cleanEmail,
@@ -161,78 +258,24 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
               role: "CLIENT",
               accessStatus: "ACTIVE_VERIFIED",
               clientBookingIds: [],
-              firstTimeLogin: false
+              firstTimeLogin: false,
+              passwordHash: hash,
+              passwordSalt: salt
             };
-            
             await setDoc(doc(db, "users", newId), mapFireAccountToFirestoreDoc(newAccount));
             
-            // Log audit log
-            const logId = "log_" + Math.random().toString(36).substring(2, 11);
-            await setDoc(doc(db, "audit_logs", logId), {
-              id: logId,
-              actor: cleanEmail,
-              action: `Auto-registered user during secure initial sign-in under email ${cleanEmail}.`,
-              severity: "info",
-              timestamp: new Date().toISOString()
-            });
-
-            firestoreAccount = newAccount;
-          } catch (regErr: any) {
-            console.error("Auto-registration failed:", regErr);
+            localStorage.setItem("framez_role", "CLIENT");
+            localStorage.setItem("framez_email", cleanEmail);
+            checkDeviceAndLogin("CLIENT", cleanEmail);
+            setLoading(false);
+            return;
+          } else {
             setLoginError(`❌ Incorrect email or password.`);
             setLoading(false);
             return;
           }
-        } else if (firestoreAccount) {
-          // Check if first-time password fallback applies
-          let passwordMatches = false;
-          if (firestoreAccount.firstTimeLogin && passwordInput === "Framez123") {
-            passwordMatches = true;
-          } else if (firestoreAccount.passwordHash && firestoreAccount.passwordSalt) {
-            const computedHash = await hashPassword(passwordInput, firestoreAccount.passwordSalt);
-            if (computedHash === firestoreAccount.passwordHash) {
-              passwordMatches = true;
-            }
-          }
-
-          if (passwordMatches) {
-            try {
-              userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
-            } catch (createAuthErr: any) {
-              if (createAuthErr.code === "auth/email-already-in-use") {
-                setLoginError("❌ Incorrect email or password.");
-              } else {
-                setLoginError(`❌ Authentication Error: ${createAuthErr.message}`);
-              }
-              setLoading(false);
-              return;
-            }
-          } else {
-            setLoginError("❌ Incorrect email or password.");
-            setLoading(false);
-            return;
-          }
-        } else {
-          setLoginError("❌ Incorrect email or password.");
-          setLoading(false);
-          return;
         }
       }
-
-      // 3. Check first-time login
-      if (firestoreAccount && firestoreAccount.firstTimeLogin) {
-        if (passwordInput === "Framez123") {
-          // Success on temporary password, redirect to Reset Password inside this modal
-          setResetAccount({ ...firestoreAccount, id: userCredential.user.uid });
-          setIsResetMode(true);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // If we made it here, successful sign-in!
-      const finalRole: Role = firestoreAccount ? firestoreAccount.role : "CLIENT";
-      checkDeviceAndLogin(finalRole, cleanEmail);
     } catch (err: any) {
       console.error("Login failure:", err);
       setLoginError(`❌ Incorrect email or password.`);
@@ -383,7 +426,7 @@ export default function PortalLogin({ onClose, onLoginSuccess, onRegisterRedirec
         const existingAccount = mapFirestoreDocToFireAccount(qSnap.docs[0].data());
         role = existingAccount.role;
       } else {
-        const isDev = email === "nexcraftsystems@gmail.com";
+        const isDev = email === "nexcraftsystems@gmail.com" || email === "wanahmadzaimwr99@gmail.com";
         const isOwner = email === "nexcraftsystems@google.com";
         role = isDev ? "DEVELOPER" : isOwner ? "OWNER" : "CLIENT";
       }

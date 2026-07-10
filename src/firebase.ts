@@ -136,7 +136,7 @@ export function mapFireAccountToFirestoreDoc(acc: FireAccount): any {
 // Initial default real accounts
 export const DEFAULT_DEMO_ACCOUNTS: FireAccount[] = [
   { id: "acc_dev", email: "nexcraftsystems@google.com", name: "Nexcraft Developer", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
-  { id: "acc_crew", email: "wanahmadzaimwr99@gmail.com", name: "Wan Ahmad Zaim", role: "CREW", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
+  { id: "acc_crew", email: "wanahmadzaimwr99@gmail.com", name: "Wan Ahmad Zaim", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: false },
   { id: "acc_dev_gmail", email: "nexcraftsystems@gmail.com", name: "Nexcraft Developer (Gmail)", role: "DEVELOPER", accessStatus: "ACTIVE_VERIFIED", clientBookingIds: [], firstTimeLogin: true },
 ];
 
@@ -177,19 +177,30 @@ export async function initializeFirestoreDb() {
       await setDoc(doc(db, ACCOUNTS_COLLECTION, finalDev.id), mapFireAccountToFirestoreDoc(finalDev));
     }
 
-    // Check crew account
-    const crewQuery = query(accountsRef, where("email", "==", "wanahmadzaimwr99@gmail.com"));
-    const crewSnap = await getDocs(crewQuery);
-    if (crewSnap.empty) {
-      console.log("Seeding missing crew account: wanahmadzaimwr99@gmail.com");
-      const crewSalt = generateSalt();
-      const crewHash = await hashPassword("Framez123", crewSalt);
-      const finalCrew: FireAccount = {
+    // Check developer role for wanahmadzaimwr99@gmail.com
+    const zaimQuery = query(accountsRef, where("email", "==", "wanahmadzaimwr99@gmail.com"));
+    const zaimSnap = await getDocs(zaimQuery);
+    if (!zaimSnap.empty) {
+      const zaimDoc = zaimSnap.docs[0];
+      const zaimData = zaimDoc.data();
+      if (zaimData.role !== "developer") {
+        console.log("Updating wanahmadzaimwr99@gmail.com to DEVELOPER role");
+        await setDoc(doc(db, ACCOUNTS_COLLECTION, zaimDoc.id), {
+          ...zaimData,
+          role: "developer",
+          firstTimeLogin: false
+        }, { merge: true });
+      }
+    } else {
+      console.log("Seeding missing developer account: wanahmadzaimwr99@gmail.com");
+      const zaimSalt = generateSalt();
+      const zaimHash = await hashPassword("Framez123", zaimSalt);
+      const finalZaim: FireAccount = {
         ...DEFAULT_DEMO_ACCOUNTS[1],
-        passwordSalt: crewSalt,
-        passwordHash: crewHash
+        passwordSalt: zaimSalt,
+        passwordHash: zaimHash
       };
-      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalCrew.id), mapFireAccountToFirestoreDoc(finalCrew));
+      await setDoc(doc(db, ACCOUNTS_COLLECTION, finalZaim.id), mapFireAccountToFirestoreDoc(finalZaim));
     }
   } catch (error) {
     console.error("Error initializing Firestore database accounts:", error);
