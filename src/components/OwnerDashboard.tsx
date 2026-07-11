@@ -825,9 +825,43 @@ export default function OwnerDashboard({
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setTestiImageUrl(reader.result as string);
-        onAddAuditLog("Developer", `Uploaded memory picture as base64 asset: ${file.name}`, "info");
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          // Resize to max 800px width/height to look fantastic but keep a very small base64 footprint
+          const MAX_SIZE = 800;
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            // Export as compressed jpeg with 0.7 quality (typically around 30-50 KB instead of 3-10 MB)
+            const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+            setTestiImageUrl(compressedBase64);
+            onAddAuditLog("Developer", `Compressed and uploaded photo file: ${file.name} (resized to ${Math.round(width)}x${Math.round(height)})`, "info");
+          } else {
+            setTestiImageUrl(event.target?.result as string);
+            onAddAuditLog("Developer", `Uploaded photo file: ${file.name} (original size fallback)`, "info");
+          }
+        };
+        img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -836,15 +870,21 @@ export default function OwnerDashboard({
   // Developer Only: Testimonials customizers
   const handleSaveTestimonial = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testiLogo || !testiQuote || !testiAuthor || !testiImageUrl) {
-      alert("Please fill in all testimonial fields.");
+    
+    const finalLogo = testiLogo.trim() || "Event";
+    const finalAuthor = testiAuthor.trim() || "Happy Client";
+    const finalQuote = testiQuote.trim() || "Captured beautiful memories with Framez!";
+    const finalImageUrl = testiImageUrl.trim();
+
+    if (!finalImageUrl) {
+      alert("Please upload an image file or provide a picture URL.");
       return;
     }
 
     if (editingTestimonialId) {
       const updated = testimonialsList.map(t => 
         t.id === editingTestimonialId 
-          ? { ...t, logo: testiLogo, quote: testiQuote, author: testiAuthor, imageUrl: testiImageUrl }
+          ? { ...t, logo: finalLogo, quote: finalQuote, author: finalAuthor, imageUrl: finalImageUrl }
           : t
       );
       onUpdateTestimonials(updated);
@@ -853,13 +893,13 @@ export default function OwnerDashboard({
     } else {
       const newTesti: Testimonial = {
         id: "testi_" + Math.random().toString(36).substr(2, 9),
-        logo: testiLogo,
-        quote: testiQuote,
-        author: testiAuthor,
-        imageUrl: testiImageUrl
+        logo: finalLogo,
+        quote: finalQuote,
+        author: finalAuthor,
+        imageUrl: finalImageUrl
       };
       onUpdateTestimonials([...testimonialsList, newTesti]);
-      onAddAuditLog("Developer", `Added new testimonial memory card by ${testiAuthor}`, "alert");
+      onAddAuditLog("Developer", `Added new testimonial memory card by ${finalAuthor}`, "alert");
     }
 
     setTestiLogo("");
@@ -2328,7 +2368,6 @@ export default function OwnerDashboard({
                     <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Client/Agency Logo Text</label>
                     <input
                       type="text"
-                      required
                       value={testiLogo}
                       onChange={(e) => setTestiLogo(e.target.value)}
                       placeholder="e.g. LOGOIPSUM"
@@ -2340,7 +2379,6 @@ export default function OwnerDashboard({
                     <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Author & Role</label>
                     <input
                       type="text"
-                      required
                       value={testiAuthor}
                       onChange={(e) => setTestiAuthor(e.target.value)}
                       placeholder="e.g. - Siti & Amri, Selangor"
@@ -2351,7 +2389,6 @@ export default function OwnerDashboard({
                   <div className="flex flex-col md:col-span-2">
                     <label className="text-[9px] font-mono text-gray-400 block mb-1 uppercase">Testimonial Quote</label>
                     <textarea
-                      required
                       rows={2}
                       value={testiQuote}
                       onChange={(e) => setTestiQuote(e.target.value)}
