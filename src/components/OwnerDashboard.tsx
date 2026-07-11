@@ -2405,7 +2405,7 @@ export default function OwnerDashboard({
                           src={t.imageUrl}
                           alt="souvenir"
                           referrerPolicy="no-referrer"
-                          className="w-10 h-10 object-contain bg-black/20 rounded-lg shrink-0"
+                          className="w-10 h-10 object-cover bg-black/20 rounded-lg shrink-0"
                         />
                         <div className="min-w-0">
                           <span className="text-xs font-bold text-white block truncate">{t.logo}</span>

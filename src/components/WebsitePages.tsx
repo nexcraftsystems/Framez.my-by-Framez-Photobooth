@@ -471,27 +471,27 @@ export default function WebsitePages({
             exit="exit"
             variants={slideVariants}
             transition={slideTransition}
-            className="w-full relative rounded-[2.5rem] p-8 md:p-12 lg:p-16 overflow-hidden min-h-[90vh] flex flex-col justify-between shadow-2xl transition-all"
-            style={{ backgroundColor: "#edd3c4" }}
+            className="glass-card rounded-[2.5rem] p-8 md:p-12 lg:p-16 border-[#799351]/20 relative overflow-hidden min-h-[90vh] flex flex-col justify-between bg-black/60 backdrop-blur-xl transition-all"
           >
             {/* Subtle elegant agency top lines */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#799351] via-[#a1c398] to-[#799351]" />
+            <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-[#799351]/10 blur-[120px] pointer-events-none" />
             
-            <div className="max-w-[1400px] mx-auto w-full space-y-12">
+            <div className="max-w-[1400px] mx-auto w-full space-y-12 z-10">
               {/* Top Typography & Navigation row */}
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 border-b border-[#c2aa9d]/30 pb-8">
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 border-b border-white/10 pb-8">
                 <div className="space-y-3.5 max-w-2xl">
-                  <span className="text-[10px] font-mono font-bold text-[#8a5b3a] uppercase tracking-[0.2em] block">
+                  <span className="text-[11px] font-mono font-bold text-[#a1c398] uppercase tracking-widest block">
                     MEMORIES & SHARED JOY
                   </span>
-                  <h2 className="text-4xl md:text-5xl lg:text-6xl font-display font-medium text-[#4a3225] tracking-tight leading-none">
+                  <h2 className="text-4xl md:text-5xl lg:text-6xl font-display text-white tracking-tight leading-none">
                     What Clients Say <br />
-                    <span className="italic font-light text-[#634839]">About the Experience</span>
+                    <span className="italic font-light text-gray-400">About the Experience</span>
                   </h2>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center max-w-xl">
-                  <p className="text-xs md:text-sm text-[#5e4436] font-light leading-relaxed">
+                  <p className="text-xs md:text-sm text-gray-400 font-light leading-relaxed">
                     We've captured over 150,000 memories – so when you join us, you're in great (and well-loved) company. Every day, more people discover how capturing frames leads to endless smiles.
                   </p>
 
@@ -500,14 +500,14 @@ export default function WebsitePages({
                     <button
                       type="button"
                       onClick={() => scrollMemories("left")}
-                      className="w-12 h-12 rounded-full border border-[#c2aa9d]/40 flex items-center justify-center text-[#4a3225] hover:bg-[#e4cbbe] transition-all shadow-sm"
+                      className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-all shadow-sm"
                     >
                       <ArrowLeft className="w-5 h-5" />
                     </button>
                     <button
                       type="button"
                       onClick={() => scrollMemories("right")}
-                      className="w-12 h-12 rounded-full bg-[#4a3225] flex items-center justify-center text-white hover:bg-[#342217] transition-all shadow-md"
+                      className="w-12 h-12 rounded-full bg-[#799351] flex items-center justify-center text-white hover:bg-[#607440] transition-all shadow-md"
                     >
                       <ArrowRight className="w-5 h-5" />
                     </button>
@@ -531,7 +531,7 @@ export default function WebsitePages({
                     {col.items.map((item, itemIdx) => (
                       <div
                         key={`${item.id}-${colIdx}-${itemIdx}`}
-                        className="group relative overflow-hidden rounded-[2.5rem] bg-[#e4cbbe]/50 border border-[#c2aa9d]/20 shadow-sm cursor-pointer"
+                        className="group relative overflow-hidden rounded-[2.5rem] bg-neutral-900/60 border border-white/10 shadow-sm cursor-pointer hover:border-[#799351]/40 transition-colors"
                         style={{ 
                           height: col.type === "tall" ? "460px" : "218px" 
                         }}
@@ -541,21 +541,21 @@ export default function WebsitePages({
                           src={item.imageUrl || "https://cdn.sceneai.art/Hero%20section%20image/3654d348-a98c-4320-bc14-3f458b45a50d.png"}
                           alt={item.author}
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-contain bg-[#342217]/5 transform transition-transform duration-[1200ms] ease-out group-hover:scale-105"
+                          className="w-full h-full object-cover bg-black/10 transform transition-transform duration-[1200ms] ease-out group-hover:scale-105"
                         />
 
                         {/* Aesthetic Shopping Badge Overlaid Bottom Left */}
-                        <div className="absolute bottom-5 left-5 w-10 h-10 rounded-full bg-[#f28e2b] text-white flex items-center justify-center shadow-md transform group-hover:scale-110 transition-transform duration-300 z-10">
+                        <div className="absolute bottom-5 left-5 w-10 h-10 rounded-full bg-[#799351] text-white flex items-center justify-center shadow-md transform group-hover:scale-110 transition-transform duration-300 z-10">
                           <svg className="w-4 h-4 fill-none stroke-current stroke-2" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
                           </svg>
                         </div>
 
                         {/* Hover Info Overlay */}
-                        <div className="absolute inset-0 bg-[#342217]/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6 text-white rounded-[2.5rem] z-20">
-                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-amber-200">{item.logo || "FRAMEZ.MY"}</span>
+                        <div className="absolute inset-0 bg-neutral-950/80 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-6 text-white rounded-[2.5rem] z-20">
+                          <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-[#a1c398]">{item.logo || "FRAMEZ.MY"}</span>
                           <p className="text-xs font-sans font-light italic leading-relaxed mt-1.5">"{item.quote}"</p>
-                          <span className="text-[10px] font-mono mt-3 text-white/80">{item.author}</span>
+                          <span className="text-[10px] font-mono mt-3 text-gray-300">{item.author}</span>
                         </div>
                       </div>
                     ))}
@@ -565,12 +565,12 @@ export default function WebsitePages({
 
               {/* Pagination/Scroll Indicator */}
               <div className="flex justify-center items-center gap-2 pt-2">
-                <div className="h-1 w-24 bg-[#c2aa9d]/30 rounded-full overflow-hidden relative">
+                <div className="h-1 w-24 bg-white/10 rounded-full overflow-hidden relative">
                   <div 
-                    className="absolute top-0 bottom-0 left-0 bg-[#4a3225] transition-all duration-300 w-1/3"
+                    className="absolute top-0 bottom-0 left-0 bg-[#799351] transition-all duration-300 w-1/3"
                   />
                 </div>
-                <span className="text-[10px] font-mono text-[#5e4436]">DRAG OR USE ARROWS TO EXPLORE</span>
+                <span className="text-[10px] font-mono text-gray-400">DRAG OR USE ARROWS TO EXPLORE</span>
               </div>
             </div>
           </motion.div>
@@ -1810,7 +1810,7 @@ function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) {
                       src={card.imageUrl || "https://cdn.sceneai.art/Hero%20section%20image/3654d348-a98c-4320-bc14-3f458b45a50d.png"}
                       alt="Memory Souvenir"
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-contain transform transition-transform duration-[800ms] group-hover:scale-105"
+                      className="w-full h-full object-cover transform transition-transform duration-[800ms] group-hover:scale-105"
                     />
                   </div>
                 </div>
