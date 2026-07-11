@@ -174,39 +174,19 @@ export default function WebsitePages({
   
   const calculatedTotal = basePrice + extraHoursPrice + upgrade4RPrice + backdropResizePrice + extraGuestbookPrice;
 
-  // Simulated uploader handler
-  const handleSimulatedUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  // Real uploader handler
+  const handleRealUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setIsUploading(true);
       setUploadProgress(10);
-      const timer = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(timer);
-            setIsUploading(false);
-            setReceiptFileName(file.name);
-            setReceiptFileSize((file.size / 1024).toFixed(1) + " KB");
-            return 100;
-          }
-          return prev + 30;
-        });
-      }, 200);
-    }
-  };
-
-  const triggerSimulatedDragUpload = () => {
-    setIsUploading(true);
-    setUploadProgress(10);
-    setTimeout(() => {
-      setUploadProgress(60);
       setTimeout(() => {
         setUploadProgress(100);
         setIsUploading(false);
-        setReceiptFileName("Maybank_Receipt_Trans_" + Math.floor(Math.random() * 90000 + 10000) + ".pdf");
-        setReceiptFileSize("184.2 KB");
-      }, 300);
-    }, 300);
+        setReceiptFileName(file.name);
+        setReceiptFileSize((file.size / 1024).toFixed(1) + " KB");
+      }, 500);
+    }
   };
 
   // Submit Reservation Action
@@ -561,7 +541,7 @@ export default function WebsitePages({
                           src={item.imageUrl || "https://cdn.sceneai.art/Hero%20section%20image/3654d348-a98c-4320-bc14-3f458b45a50d.png"}
                           alt={item.author}
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover transform transition-transform duration-[1200ms] ease-out group-hover:scale-105"
+                          className="w-full h-full object-contain bg-[#342217]/5 transform transition-transform duration-[1200ms] ease-out group-hover:scale-105"
                         />
 
                         {/* Aesthetic Shopping Badge Overlaid Bottom Left */}
@@ -1204,12 +1184,12 @@ export default function WebsitePages({
                       Please upload the PDF, PNG, or JPEG transaction slip. This receipt feeds into our active owner ledger for direct clearance confirmation:
                     </p>
 
-                    {/* Drag-and-drop Styled File Area */}
+                     {/* Drag-and-drop Styled File Area */}
                     <div className="relative border-2 border-dashed border-white/10 hover:border-[#799351]/40 rounded-2xl bg-neutral-900/40 p-6 text-center transition-all">
                       <input 
                         type="file" 
                         accept=".pdf,.png,.jpg,.jpeg"
-                        onChange={handleSimulatedUpload}
+                        onChange={handleRealUpload}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
                       />
                       
@@ -1233,7 +1213,7 @@ export default function WebsitePages({
                           </div>
                         ) : isUploading ? (
                           <div className="space-y-2">
-                            <span className="text-xs text-white block">Simulating file parsing...</span>
+                            <span className="text-xs text-white block">Uploading receipt file...</span>
                             <div className="w-32 h-1 bg-neutral-950 rounded-full mx-auto overflow-hidden">
                               <div className="h-full bg-[#a1c398]" style={{ width: `${uploadProgress}%` }} />
                             </div>
@@ -1250,17 +1230,6 @@ export default function WebsitePages({
                         )}
                       </div>
                     </div>
-
-                    {/* Simulator Button Option for ease */}
-                    {!receiptFileName && !isUploading && (
-                      <button
-                        type="button"
-                        onClick={triggerSimulatedDragUpload}
-                        className="w-full py-2.5 bg-neutral-900 hover:bg-neutral-850 border border-white/5 rounded-xl text-[10px] font-mono text-[#a1c398] uppercase font-bold tracking-wider transition-colors"
-                      >
-                        ⚡ Simulate Instant Receipt Upload
-                      </button>
-                    )}
 
                     {receiptFileName && (
                       <div className="bg-[#799351]/10 border border-[#799351]/20 p-3.5 rounded-xl text-[11px] text-[#a1c398] flex items-center justify-between">
@@ -1789,12 +1758,8 @@ function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) {
     );
   }
 
-  // Generate 3 visible cards on desktop, 1 on mobile/tablet
-  const visibleCards = [];
-  for (let i = 0; i < Math.min(3, testimonials.length); i++) {
-    const targetIdx = (currentIndex + i) % testimonials.length;
-    visibleCards.push(testimonials[targetIdx]);
-  }
+  // Display all uploaded testimonial memory cards without limiting to 3
+  const visibleCards = testimonials;
 
   return (
     <div className="space-y-10 relative">
@@ -1840,14 +1805,13 @@ function TestimonialCarousel({ testimonials }: TestimonialCarouselProps) {
                   </span>
 
                   {/* High quality portrait frame */}
-                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-neutral-100 border border-neutral-200">
+                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-neutral-50 border border-neutral-200">
                     <img
                       src={card.imageUrl || "https://cdn.sceneai.art/Hero%20section%20image/3654d348-a98c-4320-bc14-3f458b45a50d.png"}
                       alt="Memory Souvenir"
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover transform transition-transform duration-[800ms] group-hover:scale-110"
+                      className="w-full h-full object-contain transform transition-transform duration-[800ms] group-hover:scale-105"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
                   </div>
                 </div>
               </motion.div>

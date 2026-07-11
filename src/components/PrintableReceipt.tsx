@@ -40,7 +40,7 @@ export default function PrintableReceipt({ booking, onClose }: PrintableReceiptP
     registration: "SSM Registration No: 202603099811 (Framez Media Enterprise)",
     phone: "+60 12-445 6789",
     email: "billing@framez.my",
-    address: "A-12-03, Level 12, Empire Tower, Jalan SS 16/1, 47500 Subang Jaya, Selangor, Malaysia",
+    address: "A-12-03, Level 12, Empire Tower, Jalan SS 16/1, 47500 Subang Jaya, Malaysia",
     bankName: "Maybank Malaysia",
     bankAccount: "5124 4567 8901",
     bankHolder: "Framez Media Enterprise"

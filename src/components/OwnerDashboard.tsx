@@ -88,6 +88,7 @@ interface OwnerDashboardProps {
   notifications: SystemNotification[];
   onUpdateNotifications: React.Dispatch<React.SetStateAction<SystemNotification[]>>;
   onUpdateBookings?: React.Dispatch<React.SetStateAction<Booking[]>>;
+  onUpdateCrewLeads?: React.Dispatch<React.SetStateAction<CrewLead[]>>;
 }
 
 // Google Easy-Access Accounts representation (synced with localStorage)
@@ -127,9 +128,10 @@ export default function OwnerDashboard({
   notifications,
   onUpdateNotifications,
   onUpdateBookings,
+  onUpdateCrewLeads,
 }: OwnerDashboardProps) {
   // Shared Active View Tabs for Owner & Developer
-  const [activeMenu, setActiveMenu] = useState<"dashboard" | "spreadsheet" | "calendar" | "crm" | "accounts" | "performance" | "receipts" | "inventory" | "notifications" | "bankConfig">("dashboard");
+  const [activeMenu, setActiveMenu] = useState<"dashboard" | "spreadsheet" | "calendar" | "crm" | "accounts" | "performance" | "receipts" | "inventory" | "notifications" | "bankConfig" | "finance">("dashboard");
   const [selectedReceiptBookingId, setSelectedReceiptBookingId] = useState<string>(() => {
     return bookingsList.length > 0 ? bookingsList[0].id : "";
   });
@@ -148,6 +150,27 @@ export default function OwnerDashboard({
   const [bankAccNoEdit, setBankAccNoEdit] = useState(() => localStorage.getItem("framez_bank_acc_no") || "5140-1234-5678");
   const [bankQrUrlEdit, setBankQrUrlEdit] = useState(() => localStorage.getItem("framez_bank_qr_url") || "");
   const [pushSuccessMsg, setPushSuccessMsg] = useState<string | null>(null);
+
+  // Finance payout rate edit states
+  const [editingPayoutRates, setEditingPayoutRates] = useState<{ [id: string]: number }>({});
+
+  const handleUpdatePayoutRate = (crewId: string, rate: number) => {
+    if (!onUpdateCrewLeads) {
+      alert("❌ Crew database sync not ready.");
+      return;
+    }
+    onUpdateCrewLeads((prev) =>
+      prev.map((c) => (c.id === crewId ? { ...c, payoutRate: rate } : c))
+    );
+    if (onAddAuditLog) {
+      onAddAuditLog(
+        role === "DEVELOPER" ? "Developer Superuser" : "Irfan (Owner)",
+        `Adjusted crew ID ${crewId} per-job payout rate to RM ${rate}`,
+        "info"
+      );
+    }
+    alert(`💰 Payout rate successfully updated to RM ${rate} for crew member!`);
+  };
 
   // Accounts Management state (Developer only)
   const [googleAccounts, setGoogleAccounts] = useState<GoogleAccount[]>(() => {
@@ -936,6 +959,7 @@ export default function OwnerDashboard({
               { id: "calendar", label: "Master Calendar", icon: CalendarIcon },
               { id: "crm", label: "CHAT COORDINATION HUB", icon: MessageSquare },
               { id: "receipts", label: "Receipt Invoices", icon: Clipboard },
+              { id: "finance", label: "Finance & Payroll", icon: DollarSign },
               { id: "performance", label: "Crew Performance", icon: Award },
               { id: "inventory", label: "Central Inventory", icon: Package },
               { id: "notifications", label: "Notifications", icon: Bell },
@@ -959,7 +983,7 @@ export default function OwnerDashboard({
             })}
 
             {/* Assign Portal Option */}
-            {(role === "DEVELOPER" || role === "OWNER") && (
+            {role === "DEVELOPER" && (
               <button
                 onClick={() => setActiveMenu("accounts")}
                 title={sidebarCollapsed ? "Assign Portal" : undefined}
@@ -1896,7 +1920,7 @@ export default function OwnerDashboard({
       )}
 
       {/* DEVELOPER ACCESS CONTROLS TABS */}
-      {activeMenu === "accounts" && (role === "DEVELOPER" || role === "OWNER") && (
+      {activeMenu === "accounts" && role === "DEVELOPER" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* Create new user accounts (4 columns for optimal balance) */}
@@ -2381,7 +2405,7 @@ export default function OwnerDashboard({
                           src={t.imageUrl}
                           alt="souvenir"
                           referrerPolicy="no-referrer"
-                          className="w-10 h-10 object-cover rounded-lg shrink-0"
+                          className="w-10 h-10 object-contain bg-black/20 rounded-lg shrink-0"
                         />
                         <div className="min-w-0">
                           <span className="text-xs font-bold text-white block truncate">{t.logo}</span>
@@ -2633,6 +2657,318 @@ export default function OwnerDashboard({
           userEmail={role === "DEVELOPER" ? "dev@framez.my" : "irfan@framez.my"}
           onAddAuditLog={onAddAuditLog}
         />
+      )}
+
+      {activeMenu === "finance" && (
+        <div className="space-y-6 w-full text-white">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4">
+            <div>
+              <h3 className="text-lg font-bold font-display uppercase tracking-wider text-[#a1c398] flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-[#a1c398]" />
+                <span>Finance & Payroll Console</span>
+              </h3>
+              <p className="text-xs text-gray-400 mt-1">
+                Direct financial auditing, operating cashflows, and crew payroll rate configuration.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 bg-[#799351]/10 px-3 py-1.5 rounded-full border border-[#799351]/20 text-[#a1c398] text-[10px] font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Real-Time Ledgers Active</span>
+            </div>
+          </div>
+
+          {/* Core Analytics Cards */}
+          {(() => {
+            const todayStr = new Date().toISOString().split("T")[0];
+            
+            // Total Contract Value
+            const totalContractValue = bookingsList.reduce((sum, b) => sum + (b.totalPrice || 0), 0);
+            
+            // Total Cash Collected
+            const totalCashCollected = bookingsList.reduce((sum, b) => {
+              let paid = 0;
+              if (b.receiptApproved) paid += 200; // deposit paid
+              if (b.unlockedDrive) {
+                paid += ((b.totalPrice || 200) - 200); // balance paid
+              }
+              return sum + paid;
+            }, 0);
+
+            // Total Crew Payout Liability (all assigned bookings)
+            const totalCrewPayouts = bookingsList.reduce((sum, b) => {
+              if (b.crewLeadId) {
+                const crew = crewLeads.find(c => c.id === b.crewLeadId);
+                const rate = crew?.payoutRate ?? 200;
+                return sum + rate;
+              }
+              return sum;
+            }, 0);
+
+            // Total Referral Liability
+            const getReferredCount = (crew: CrewLead) => {
+              const crewReferralCode = crew.id === "c1" ? "CREW-ZACK-01" : crew.id === "c2" ? "CREW-MAYA-02" : `CREW-${crew.name.toUpperCase()}-03`;
+              return bookingsList.filter((b) => {
+                const code = (b.referralCode || "").trim().toUpperCase();
+                return (
+                  code === crew.id.toUpperCase() ||
+                  code === crewReferralCode.toUpperCase() ||
+                  code === crew.name.toUpperCase()
+                );
+              }).length;
+            };
+
+            const totalReferralPayouts = crewLeads.reduce((sum, c) => {
+              return sum + (getReferredCount(c) * 50);
+            }, 0);
+
+            const totalObligation = totalCrewPayouts + totalReferralPayouts;
+            const operatingMargin = totalCashCollected - totalObligation;
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-neutral-900/60 border border-white/10 rounded-2xl p-5 backdrop-blur-md">
+                  <span className="text-[9px] font-mono text-gray-400 block uppercase">Total Contract value</span>
+                  <span className="text-xl font-mono font-bold text-white block mt-1">RM {totalContractValue}</span>
+                  <p className="text-[10px] text-gray-500 mt-1">Sum of all reservation package agreements.</p>
+                </div>
+
+                <div className="bg-neutral-900/60 border border-white/10 rounded-2xl p-5 backdrop-blur-md">
+                  <span className="text-[9px] font-mono text-gray-400 block uppercase">Cleared Cash Received</span>
+                  <span className="text-xl font-mono font-bold text-emerald-400 block mt-1">RM {totalCashCollected}</span>
+                  <p className="text-[10px] text-gray-500 mt-1">Verified deposit + settled second balance invoices.</p>
+                </div>
+
+                <div className="bg-neutral-900/60 border border-white/10 rounded-2xl p-5 backdrop-blur-md">
+                  <span className="text-[9px] font-mono text-gray-400 block uppercase">Crew Payout Obligations</span>
+                  <span className="text-xl font-mono font-bold text-amber-500 block mt-1">RM {totalObligation}</span>
+                  <p className="text-[10px] text-gray-500 mt-1">RM {totalCrewPayouts} event pay + RM {totalReferralPayouts} referral commission.</p>
+                </div>
+
+                <div className="bg-neutral-900/60 border border-[#799351]/20 rounded-2xl p-5 backdrop-blur-md bg-gradient-to-br from-[#799351]/5 to-transparent">
+                  <span className="text-[9px] font-mono text-[#a1c398] block uppercase">Net Operating Margin</span>
+                  <span className={`text-xl font-mono font-bold block mt-1 ${operatingMargin >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                    RM {operatingMargin}
+                  </span>
+                  <p className="text-[10px] text-gray-500 mt-1">Retained company profit before general taxes.</p>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Sub-panels for Crew configuration & Job Ledger */}
+          <div className="grid grid-cols-1 gap-6">
+            {/* Crew Salaries and Configuration */}
+            <div className="bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <h4 className="text-xs font-bold font-display uppercase tracking-widest text-[#a1c398]">
+                  👥 Crew Staff Payroll & Pay Coordinates
+                </h4>
+                <span className="text-[10px] text-gray-400 font-mono">Active Crew Leads ({crewLeads.length})</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-white/5 text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+                      <th className="pb-3 font-normal">Coordinator Details</th>
+                      <th className="pb-3 font-normal">Assigned / Completed Jobs</th>
+                      <th className="pb-3 font-normal">Referred Leads</th>
+                      <th className="pb-3 font-normal">Base Rate (Per Job)</th>
+                      <th className="pb-3 font-normal">Total Earned (RM)</th>
+                      <th className="pb-3 font-normal">Staff Bank Coordinates</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {crewLeads.map((crew) => {
+                      const todayStr = new Date().toISOString().split("T")[0];
+                      const assignedJobs = bookingsList.filter(b => b.crewLeadId === crew.id);
+                      const completedJobs = assignedJobs.filter(b => b.date < todayStr && b.status === "BOOKED").length;
+
+                      const crewReferralCode = crew.id === "c1" ? "CREW-ZACK-01" : crew.id === "c2" ? "CREW-MAYA-02" : `CREW-${crew.name.toUpperCase()}-03`;
+                      const referredBookingsCount = bookingsList.filter((b) => {
+                        const code = (b.referralCode || "").trim().toUpperCase();
+                        return (
+                          code === crew.id.toUpperCase() ||
+                          code === crewReferralCode.toUpperCase() ||
+                          code === crew.name.toUpperCase()
+                        );
+                      }).length;
+
+                      const rate = crew.payoutRate ?? 200;
+                      const calculatedJobsEarnings = completedJobs * rate;
+                      const calculatedReferralEarnings = referredBookingsCount * 50;
+                      const calculatedTotalEarnings = calculatedJobsEarnings + calculatedReferralEarnings;
+
+                      const editingRate = editingPayoutRates[crew.id] !== undefined ? editingPayoutRates[crew.id] : rate;
+
+                      return (
+                        <tr key={crew.id} className="hover:bg-white/[2%] transition-colors">
+                          <td className="py-4">
+                            <div className="flex items-center gap-2.5">
+                              {crew.avatarUrl ? (
+                                <img src={crew.avatarUrl} alt={crew.name} className="w-8 h-8 rounded-full object-cover border border-white/10" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-neutral-800 border border-white/10 flex items-center justify-center font-bold text-[#a1c398]">
+                                  {crew.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-bold text-white">{crew.name}</div>
+                                <div className="text-[10px] text-gray-500 font-mono truncate max-w-[150px]">{crew.gmailAccount}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-4 font-mono text-gray-300">
+                            <div>{assignedJobs.length} Assigned</div>
+                            <div className="text-[10px] text-emerald-400">{completedJobs} Completed</div>
+                          </td>
+
+                          <td className="py-4 font-mono text-gray-300">
+                            <div>{referredBookingsCount} referred</div>
+                            <div className="text-[10px] text-gray-500">RM {calculatedReferralEarnings} earned</div>
+                          </td>
+
+                          <td className="py-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-gray-400">RM</span>
+                              <input
+                                type="number"
+                                value={editingRate}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value) || 0;
+                                  setEditingPayoutRates(prev => ({ ...prev, [crew.id]: val }));
+                                }}
+                                className="w-16 bg-neutral-950 border border-white/10 rounded-lg px-2 py-1 text-center font-mono text-xs text-white focus:border-[#799351] outline-none"
+                              />
+                              <button
+                                onClick={() => handleUpdatePayoutRate(crew.id, editingRate)}
+                                className="p-1.5 bg-[#799351]/10 hover:bg-[#799351] text-[#a1c398] hover:text-white rounded-lg transition-all border border-[#799351]/20 cursor-pointer"
+                                title="Save pay rate"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+
+                          <td className="py-4 font-mono">
+                            <div className="text-white font-bold">RM {calculatedTotalEarnings}</div>
+                            <div className="text-[10px] text-gray-500">RM {calculatedJobsEarnings} jobs + RM {calculatedReferralEarnings} ref</div>
+                          </td>
+
+                          <td className="py-4 font-mono text-gray-400">
+                            {crew.bankAccountNumber ? (
+                              <div className="space-y-0.5">
+                                <div className="text-white text-[10px] uppercase font-bold">{crew.bankName}</div>
+                                <div>{crew.bankAccountNumber}</div>
+                                <div className="text-[9px] text-gray-500">{crew.bankAccountHolder}</div>
+                              </div>
+                            ) : (
+                              <span className="text-amber-500 font-mono text-[10px] bg-amber-950/20 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                                No Coordinates Saved
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Job Ledger list */}
+            <div className="bg-neutral-900/60 border border-white/10 rounded-[2rem] p-6 backdrop-blur-md space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <h4 className="text-xs font-bold font-display uppercase tracking-widest text-[#a1c398]">
+                  📖 Job-by-Job Financial Ledger
+                </h4>
+                <span className="text-[10px] text-gray-400 font-mono">Active Projects ({bookingsList.length})</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-white/5 text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+                      <th className="pb-3 font-normal">Booking ID & Date</th>
+                      <th className="pb-3 font-normal">Client Details</th>
+                      <th className="pb-3 font-normal">Package Selected</th>
+                      <th className="pb-3 font-normal">Contract (RM)</th>
+                      <th className="pb-3 font-normal">Assigned Crew Lead</th>
+                      <th className="pb-3 font-normal">Expense Crew Pay (RM)</th>
+                      <th className="pb-3 font-normal">Cash Flow Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {bookingsList.map((b) => {
+                      const crewLead = crewLeads.find(c => c.id === b.crewLeadId);
+                      const crewRate = crewLead?.payoutRate ?? 200;
+
+                      let statusColor = "bg-amber-950 text-amber-400 border border-amber-500/20";
+                      let statusText = "PENDING DEPOSIT";
+
+                      if (b.receiptApproved) {
+                        statusColor = "bg-blue-950 text-blue-400 border border-blue-500/20";
+                        statusText = "DEPOSIT VERIFIED";
+                      }
+                      if (b.unlockedDrive) {
+                        statusColor = "bg-emerald-950 text-emerald-400 border border-emerald-500/20";
+                        statusText = "FULLY PAID";
+                      }
+
+                      return (
+                        <tr key={b.id} className="hover:bg-white/[2%] transition-colors">
+                          <td className="py-3 font-mono">
+                            <div className="font-bold text-white">{b.id}</div>
+                            <div className="text-[10px] text-gray-500">{b.date}</div>
+                          </td>
+
+                          <td className="py-3">
+                            <div className="text-white font-medium">{b.clientName}</div>
+                            <div className="text-[10px] text-gray-500 font-mono">{b.clientEmail}</div>
+                          </td>
+
+                          <td className="py-3 text-gray-300">
+                            <div>{b.packageName}</div>
+                            {b.referralCode && (
+                              <div className="text-[10px] text-[#a1c398] font-mono">Ref Code: {b.referralCode}</div>
+                            )}
+                          </td>
+
+                          <td className="py-3 font-mono font-bold text-white">
+                            RM {b.totalPrice}
+                          </td>
+
+                          <td className="py-3 text-gray-300 font-medium">
+                            {crewLead ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                <span>{crewLead.name}</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 italic">Unassigned</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 font-mono text-amber-500">
+                            {crewLead ? `RM ${crewRate}` : "RM 0"}
+                          </td>
+
+                          <td className="py-3">
+                            <span className={`text-[8px] font-bold font-mono px-2 py-0.5 rounded-full uppercase ${statusColor}`}>
+                              {statusText}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeMenu === "bankConfig" && role === "DEVELOPER" && (

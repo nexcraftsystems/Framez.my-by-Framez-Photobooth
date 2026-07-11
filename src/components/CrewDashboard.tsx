@@ -114,8 +114,8 @@ export default function CrewDashboard({
     return !isPastDate && (b.status === "BOOKED" || b.status === "PREBOOKED");
   });
 
-  // Calculate earnings payout: 20% of package value for completed past jobs
-  const jobEarnings = pastJobs.reduce((sum, b) => sum + (b.totalPrice * 0.2), 0);
+  // Calculate earnings payout using the crew's customizable payout rate (defaults to RM 200)
+  const jobEarnings = pastJobs.reduce((sum) => sum + (crewProfile.payoutRate ?? 200), 0);
 
   // 2. FIND REFERRED CLIENTS (referralCode matches their referral pattern)
   const referredClients = bookingsList.filter((b) => {
@@ -364,7 +364,7 @@ export default function CrewDashboard({
                     </div>
                   </div>
                   <div className="text-[10px] text-gray-500 font-mono">
-                    * Job payouts are calculated as a <strong>20% share</strong> of each package price upon successful event completion.
+                    * Job payouts are calculated based on your personal base rate of <strong>RM {crewProfile.payoutRate ?? 200} per event</strong> assigned by the owner.
                   </div>
                 </div>
 
@@ -518,7 +518,7 @@ export default function CrewDashboard({
                         <th className="py-3 px-4">Date</th>
                         <th className="py-3 px-4">Region Space</th>
                         <th className="py-3 px-4">Event Package</th>
-                        <th className="py-3 px-4">Estimated Share</th>
+                        <th className="py-3 px-4">Estimated Payout</th>
                         <th className="py-3 px-4 text-right">Status</th>
                       </tr>
                     </thead>
@@ -530,7 +530,7 @@ export default function CrewDashboard({
                           <td className="py-3 px-4 font-mono text-amber-400">{b.date}</td>
                           <td className="py-3 px-4 font-mono text-gray-300 uppercase">{b.state}</td>
                           <td className="py-3 px-4 text-gray-400 font-light">{b.packageName}</td>
-                          <td className="py-3 px-4 font-bold text-white">RM {(b.totalPrice * 0.2).toFixed(2)}</td>
+                          <td className="py-3 px-4 font-bold text-white">RM {(crewProfile.payoutRate ?? 200).toFixed(2)}</td>
                           <td className="py-3 px-4 text-right">
                             <span className="px-2 py-0.5 bg-amber-950 text-amber-400 border border-amber-800/30 font-mono text-[9px] rounded font-bold uppercase">
                               {b.status}
@@ -574,7 +574,7 @@ export default function CrewDashboard({
                         <th className="py-3 px-4">Date</th>
                         <th className="py-3 px-4">Region Space</th>
                         <th className="py-3 px-4">Event Package</th>
-                        <th className="py-3 px-4">Earning Share (20%)</th>
+                        <th className="py-3 px-4">Earning Payout</th>
                         <th className="py-3 px-4 text-right">Status</th>
                       </tr>
                     </thead>
@@ -586,7 +586,7 @@ export default function CrewDashboard({
                           <td className="py-3 px-4 font-mono text-gray-300">{b.date}</td>
                           <td className="py-3 px-4 font-mono text-gray-300 uppercase">{b.state}</td>
                           <td className="py-3 px-4 text-gray-400 font-light">{b.packageName}</td>
-                          <td className="py-3 px-4 font-bold text-[#a1c398]">RM {(b.totalPrice * 0.2).toFixed(2)}</td>
+                          <td className="py-3 px-4 font-bold text-[#a1c398]">RM {(crewProfile.payoutRate ?? 200).toFixed(2)}</td>
                           <td className="py-3 px-4 text-right">
                             <span className="px-2 py-0.5 bg-emerald-950/50 text-emerald-400 border border-emerald-800/30 font-mono text-[9px] rounded font-bold uppercase">
                               COMPLETED

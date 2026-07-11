@@ -61,6 +61,15 @@ export default function ClientDashboard({
   
   const [isCreatingNewBooking, setIsCreatingNewBooking] = useState(clientBookings.length === 0);
 
+  // Profile management states
+  const [profileName, setProfileName] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileCompany, setProfileCompany] = useState("");
+  const [profileInstagram, setProfileInstagram] = useState("");
+  const [profileBillingAddress, setProfileBillingAddress] = useState("");
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   // Linear Wizard step (1 to 8)
   const [wizardStep, setWizardStep] = useState<number>(1);
 
@@ -111,6 +120,56 @@ export default function ClientDashboard({
   const activeBooking = isCreatingNewBooking 
     ? null 
     : bookingsList.find((b) => b.id === selectedBookingId) || clientBookings[0] || null;
+
+  // Real-time profile sync from Firestore
+  useEffect(() => {
+    if (!userEmail) return;
+    const userRef = doc(db, "users", userEmail.toLowerCase());
+    const unsubscribe = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setProfileName(data.name || userEmail.split("@")[0].toUpperCase());
+        setProfilePhone(data.phone || "");
+        setProfileCompany(data.company || "");
+        setProfileInstagram(data.instagram || "");
+        setProfileBillingAddress(data.billingAddress || "");
+      } else {
+        // Initialize defaults if no doc exists
+        setProfileName(userEmail.split("@")[0].toUpperCase());
+        setProfilePhone("");
+        setProfileCompany("");
+        setProfileInstagram("");
+        setProfileBillingAddress("");
+      }
+    });
+    return () => unsubscribe();
+  }, [userEmail]);
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    try {
+      const userRef = doc(db, "users", userEmail.toLowerCase());
+      await setDoc(userRef, {
+        name: profileName,
+        phone: profilePhone,
+        company: profileCompany,
+        instagram: profileInstagram,
+        billingAddress: profileBillingAddress,
+        email: userEmail,
+        role: "CLIENT",
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      setIsEditingProfile(false);
+      if (onAddAuditLog) {
+        onAddAuditLog("Client Profile", `Client personal profile details updated. Phone: ${profilePhone}`, "info");
+      }
+    } catch (err) {
+      console.error("Failed to save client profile:", err);
+      alert("❌ Failed to save profile. Please check connection.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   // Real-time synchronization of chats from Firestore for this specific booking
   useEffect(() => {
@@ -401,33 +460,153 @@ export default function ClientDashboard({
       {/* 1. SECURE GOOGLE EASY ACCESS CLIENT PROFILE HEADER */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Profile Card */}
+        {/* Interactive Personal Profile Card */}
         <div className="lg:col-span-4 bg-gradient-to-br from-neutral-900 to-neutral-950 border border-[#799351]/30 p-5 rounded-[2rem] flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[9px] font-mono font-bold tracking-widest text-[#a1c398] bg-[#799351]/15 px-2.5 py-1 rounded-full border border-[#799351]/20 uppercase">
-                🔒 Google Workspace Verified
+                {isEditingProfile ? "✍️ Editing Profile" : "🔒 Google Profile Secured"}
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-[#799351] to-[#a1c398] flex items-center justify-center font-display text-lg font-bold text-neutral-950 shadow-md">
-                {userEmail.charAt(0).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                <h4 className="text-sm font-bold text-white truncate font-mono">{userEmail.split("@")[0].toUpperCase()}</h4>
-                <p className="text-[10px] text-gray-400 truncate">{userEmail}</p>
-              </div>
-            </div>
+            {isEditingProfile ? (
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block mb-1">Full Client Name</label>
+                  <input
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-[#799351] outline-none font-mono"
+                  />
+                </div>
 
-            <p className="text-[11px] text-gray-400 leading-relaxed font-light">
-              Integrated via Google Secure Single-Sign-On. Pre-bookings, invoices, and photos are backed up dynamically in cloud storage.
-            </p>
+                <div>
+                  <label className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block mb-1">Phone Number *</label>
+                  <input
+                    type="tel"
+                    value={profilePhone}
+                    onChange={(e) => setProfilePhone(e.target.value)}
+                    placeholder="+6012-3456789"
+                    className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-[#799351] outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block mb-1">Company / Institution</label>
+                  <input
+                    type="text"
+                    value={profileCompany}
+                    onChange={(e) => setProfileCompany(e.target.value)}
+                    placeholder="Optional company name"
+                    className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-[#799351] outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block mb-1">Instagram Handle</label>
+                  <input
+                    type="text"
+                    value={profileInstagram}
+                    onChange={(e) => setProfileInstagram(e.target.value)}
+                    placeholder="@username"
+                    className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-[#799351] outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[9px] font-mono text-gray-400 uppercase tracking-wider block mb-1">Billing Address</label>
+                  <textarea
+                    value={profileBillingAddress}
+                    onChange={(e) => setProfileBillingAddress(e.target.value)}
+                    placeholder="Corporate or home billing address"
+                    rows={2}
+                    className="w-full bg-neutral-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-[#799351] outline-none font-mono resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    onClick={() => setIsEditingProfile(false)}
+                    disabled={isSavingProfile}
+                    className="py-2 bg-neutral-900 hover:bg-neutral-850 text-gray-400 rounded-xl text-[10px] font-bold font-mono uppercase tracking-wider border border-white/5 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={isSavingProfile}
+                    className="py-2 bg-[#799351] hover:bg-[#5f743e] text-white rounded-xl text-[10px] font-bold font-mono uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {isSavingProfile ? "Saving..." : "Save Details"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-[#799351] to-[#a1c398] flex items-center justify-center font-display text-lg font-bold text-neutral-950 shadow-md shrink-0">
+                    {userEmail.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold text-white truncate font-mono">{profileName || userEmail.split("@")[0].toUpperCase()}</h4>
+                    <p className="text-[10px] text-gray-500 truncate">{userEmail}</p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-neutral-950/60 border border-white/5 rounded-2xl space-y-2.5 text-xs">
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <User className="w-3.5 h-3.5 text-[#a1c398] shrink-0" />
+                    <span className="truncate">{profileName || "Not set yet"}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <User className="w-3.5 h-3.5 text-[#a1c398] shrink-0" />
+                    {profilePhone ? (
+                      <span className="font-mono text-white font-medium">{profilePhone}</span>
+                    ) : (
+                      <span className="text-amber-500 font-mono text-[10px] bg-amber-950/20 border border-amber-500/20 px-2 py-0.5 rounded">
+                        ⚠️ Phone Required
+                      </span>
+                    )}
+                  </div>
+
+                  {profileCompany && (
+                    <div className="flex items-center gap-2 text-gray-400">
+                      <Sparkles className="w-3.5 h-3.5 text-[#a1c398] shrink-0" />
+                      <span className="truncate">{profileCompany}</span>
+                    </div>
+                  )}
+
+                  {profileInstagram && (
+                    <div className="flex items-center gap-2 text-gray-400">
+                      <Heart className="w-3.5 h-3.5 text-[#a1c398] shrink-0" />
+                      <span className="font-mono text-[11px] text-gray-300">{profileInstagram}</span>
+                    </div>
+                  )}
+
+                  {profileBillingAddress && (
+                    <div className="flex items-start gap-2 text-gray-400 pt-0.5 border-t border-white/5">
+                      <MapPin className="w-3.5 h-3.5 text-[#a1c398] shrink-0 mt-0.5" />
+                      <span className="line-clamp-2 text-[10px] leading-snug">{profileBillingAddress}</span>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setIsEditingProfile(true)}
+                  className="w-full py-2.5 bg-neutral-900 hover:bg-neutral-850 border border-white/5 rounded-xl text-[10px] font-mono text-[#a1c398] uppercase font-bold tracking-wider transition-colors cursor-pointer"
+                >
+                  Edit Personal Information
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="border-t border-white/5 pt-3 mt-4 flex items-center justify-between text-[10px] font-mono text-[#a1c398]">
-            <span>Secured Session ID</span>
+          <div className="border-t border-white/5 pt-3 mt-4 flex items-center justify-between text-[10px] font-mono text-gray-500">
+            <span>Session ID</span>
             <span>GSSO-{Math.random().toString(36).substr(2, 6).toUpperCase()}</span>
           </div>
         </div>
@@ -616,6 +795,19 @@ export default function ClientDashboard({
               <h4 className="text-xs font-bold text-white uppercase tracking-wider">🔒 Experience Confirmed & Locked</h4>
               <p className="text-[11px] text-gray-400 mt-0.5 font-light leading-relaxed">
                 Your event slot is fully locked in our corporate scheduling register. Pre-selected packages can be adjusted or upgraded anytime by communicating via the **Founder live coordination chat (Step 7)**.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Pending Verification Banner */}
+        {!isCreatingNewBooking && activeBooking && !activeBooking.receiptApproved && (
+          <div className="p-4 bg-gradient-to-r from-amber-950/40 to-neutral-950 border border-amber-500/20 rounded-2xl flex items-start gap-3 shadow-[0_0_15px_rgba(245,158,11,0.05)]">
+            <Clock className="w-5 h-5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
+            <div>
+              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider">🔔 Payment Pending Verification</h4>
+              <p className="text-[11px] text-gray-300 mt-0.5 font-light leading-relaxed">
+                Thank you for submitting your transaction receipt! Your deposit payment is currently under review by Irfan & Irsalina, and **your payment will be verified soon**. Your booking status will automatically lock into "LOCKED & SECURED" once matching ledger items clear.
               </p>
             </div>
           </div>
@@ -1328,40 +1520,66 @@ export default function ClientDashboard({
             {activeBooking ? (
               <div className="space-y-6">
                 
-                {activeBooking.unlockedDrive ? (
-                  <div className="p-8 bg-emerald-950/20 border border-emerald-500/20 rounded-3xl text-center space-y-4">
-                    <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-[#a1c398] flex items-center justify-center mx-auto text-2xl font-bold animate-pulse">✓</div>
-                    
-                    <div className="space-y-1">
-                      <h4 className="text-base font-bold text-white uppercase tracking-wider font-display italic">Your Digital Memories Are Unlocked!</h4>
-                      <p className="text-xs text-gray-300 font-light max-w-md mx-auto leading-relaxed">
-                        Irfan and our site operator have uploaded your entire photobooth directory (high resolution prints + individual high-speed strip captures + raw files) into Google Drive cloud storage.
-                      </p>
-                    </div>
+                {(() => {
+                  const todayStr = new Date().toISOString().split("T")[0];
+                  const isEventPassed = activeBooking && todayStr > activeBooking.date;
+                  
+                  if (!isEventPassed) {
+                    return (
+                      <div className="p-8 bg-amber-950/20 border border-amber-500/20 rounded-3xl text-center space-y-4">
+                        <FolderLock className="w-12 h-12 text-amber-500 mx-auto animate-bounce" />
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Cloud Directory Locked</h4>
+                          <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                            ⚠️ In accordance with our security policies, your Google Drive folder remains locked until **after the date of the event** (Event Date: <strong>{activeBooking.date}</strong>). 
+                          </p>
+                          <div className="pt-2 text-[10px] text-amber-400 font-mono">
+                            Current Date: {todayStr} • Status: Locked until event completion.
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
 
-                    <div className="pt-2">
-                      <a
-                        href="https://drive.google.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#799351] hover:bg-[#5f743e] text-white rounded-xl text-xs font-semibold uppercase tracking-widest transition-all shadow-lg hover:scale-101"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Download Google Drive Gallery</span>
-                      </a>
+                  if (activeBooking.unlockedDrive) {
+                    return (
+                      <div className="p-8 bg-emerald-950/20 border border-emerald-500/20 rounded-3xl text-center space-y-4">
+                        <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-[#a1c398] flex items-center justify-center mx-auto text-2xl font-bold animate-pulse">✓</div>
+                        
+                        <div className="space-y-1">
+                          <h4 className="text-base font-bold text-white uppercase tracking-wider font-display italic">Your Digital Memories Are Unlocked!</h4>
+                          <p className="text-xs text-gray-300 font-light max-w-md mx-auto leading-relaxed">
+                            Irfan and our site operator have uploaded your entire photobooth directory (high resolution prints + individual high-speed strip captures + raw files) into Google Drive cloud storage.
+                          </p>
+                        </div>
+
+                        <div className="pt-2">
+                          <a
+                            href="https://drive.google.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#799351] hover:bg-[#5f743e] text-white rounded-xl text-xs font-semibold uppercase tracking-widest transition-all shadow-lg hover:scale-101"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Download Google Drive Gallery</span>
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-8 bg-amber-950/20 border border-amber-500/20 rounded-3xl text-center space-y-4">
+                      <FolderLock className="w-12 h-12 text-amber-500 mx-auto" />
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Cloud Directory Preparing</h4>
+                        <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                          Your event date ({activeBooking.date}) has passed! Our site crew operator is currently backing up and compiling your high-res photos to Google Drive. The gallery link will unlock automatically here as soon as upload is verified.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="p-8 bg-amber-950/20 border border-amber-500/20 rounded-3xl text-center space-y-4">
-                    <FolderLock className="w-12 h-12 text-amber-500 mx-auto" />
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-white uppercase font-mono tracking-wider">Cloud Directory Locked</h4>
-                      <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-                        Digital memories are unlocked automatically right after the photobooth event concludes and accounting marks your 2nd payment balance invoice as fully settled in Step 6.
-                      </p>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Event Reviews Form */}
                 <div className="p-6 bg-neutral-950/40 border border-white/5 rounded-2xl space-y-4">

@@ -300,10 +300,129 @@ export default function App() {
       handleFirestoreError(error, OperationType.GET, "testimonials");
     });
 
+    // 4. Sync Locations List
+    const unsubscribeLocations = onSnapshot(collection(db, "locations"), async (snapshot) => {
+      if (snapshot.empty) {
+        try {
+          const promises = DEFAULT_LOCATIONS.map(l => setDoc(doc(db, "locations", l.id), l));
+          await Promise.all(promises);
+        } catch (err) {
+          console.error("Failed to seed locations to Firestore", err);
+        }
+      } else {
+        const list: InventoryLocation[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as InventoryLocation);
+        });
+        setLocations(list);
+      }
+    }, (error) => {
+      console.error("Locations sync error:", error);
+    });
+
+    // 5. Sync Inventory Items
+    const unsubscribeInventory = onSnapshot(collection(db, "inventory"), async (snapshot) => {
+      if (snapshot.empty) {
+        try {
+          const promises = DEFAULT_INVENTORY.map(i => setDoc(doc(db, "inventory", i.id), i));
+          await Promise.all(promises);
+        } catch (err) {
+          console.error("Failed to seed inventory to Firestore", err);
+        }
+      } else {
+        const list: InventoryItem[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as InventoryItem);
+        });
+        setInventory(list);
+      }
+    }, (error) => {
+      console.error("Inventory sync error:", error);
+    });
+
+    // 6. Sync Inventory Requests
+    const unsubscribeRequests = onSnapshot(collection(db, "inventory_requests"), (snapshot) => {
+      const list: InventoryRequest[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push(docSnap.data() as InventoryRequest);
+      });
+      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setInventoryRequests(list);
+    }, (error) => {
+      console.error("Inventory requests sync error:", error);
+    });
+
+    // 7. Sync Crew Leads
+    const unsubscribeCrews = onSnapshot(collection(db, "crews"), async (snapshot) => {
+      if (snapshot.empty) {
+        const seedCrew: CrewLead[] = [
+          {
+            id: "c_zack_1",
+            name: "Zack Crew lead",
+            role: "Lead Coordinator",
+            phone: "+6012-3456789",
+            assignedEvents: [],
+            activeEquipment: [],
+            bankName: "Maybank",
+            bankAccountNumber: "514012345678",
+            bankAccountHolder: "Zack bin Ahmad",
+            gmailAccount: "crew@framez.my",
+            avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80",
+            payoutRate: 200,
+          },
+          {
+            id: "c_maya_2",
+            name: "Maya Coordinator",
+            role: "Senior Operator",
+            phone: "+6013-9876543",
+            assignedEvents: [],
+            activeEquipment: [],
+            bankName: "CIMB",
+            bankAccountNumber: "704123456789",
+            bankAccountHolder: "Maya binti Yusuf",
+            gmailAccount: "maya@framez.my",
+            avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80",
+            payoutRate: 200,
+          }
+        ];
+        try {
+          const promises = seedCrew.map(c => setDoc(doc(db, "crews", c.id), c));
+          await Promise.all(promises);
+        } catch (err) {
+          console.error("Failed to seed crew leads", err);
+        }
+      } else {
+        const list: CrewLead[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as CrewLead);
+        });
+        setCrewLeads(list);
+      }
+    }, (error) => {
+      console.error("Crews sync error:", error);
+    });
+
+    // 8. Sync Chats
+    const unsubscribeChats = onSnapshot(collection(db, "chats"), (snapshot) => {
+      const list: ChatMessage[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push(docSnap.data() as ChatMessage);
+      });
+      list.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      setChatMessages(list);
+    }, (error) => {
+      console.error("Chats sync error:", error);
+    });
+
     return () => {
       unsubscribeBookings();
       unsubscribeNotifications();
       unsubscribeTestimonials();
+      unsubscribeLocations();
+      unsubscribeInventory();
+      unsubscribeRequests();
+      unsubscribeCrews();
+      unsubscribeChats();
     };
   }, []);
 
@@ -584,6 +703,90 @@ export default function App() {
     }
   };
 
+  const handleUpdateLocationsState = async (
+    updater: React.SetStateAction<InventoryLocation[]>
+  ) => {
+    let newList: InventoryLocation[] = [];
+    if (typeof updater === "function") {
+      newList = (updater as any)(locations);
+    } else {
+      newList = updater;
+    }
+    try {
+      for (const loc of newList) {
+        const existing = locations.find(item => item.id === loc.id);
+        if (!existing || JSON.stringify(existing) !== JSON.stringify(loc)) {
+          await setDoc(doc(db, "locations", loc.id), loc);
+        }
+      }
+    } catch (err) {
+      console.error("Error saving location to Firestore:", err);
+    }
+  };
+
+  const handleUpdateInventoryState = async (
+    updater: React.SetStateAction<InventoryItem[]>
+  ) => {
+    let newList: InventoryItem[] = [];
+    if (typeof updater === "function") {
+      newList = (updater as any)(inventory);
+    } else {
+      newList = updater;
+    }
+    try {
+      for (const item of newList) {
+        const existing = inventory.find(i => i.id === item.id);
+        if (!existing || JSON.stringify(existing) !== JSON.stringify(item)) {
+          await setDoc(doc(db, "inventory", item.id), item);
+        }
+      }
+    } catch (err) {
+      console.error("Error saving inventory item to Firestore:", err);
+    }
+  };
+
+  const handleUpdateRequestsState = async (
+    updater: React.SetStateAction<InventoryRequest[]>
+  ) => {
+    let newList: InventoryRequest[] = [];
+    if (typeof updater === "function") {
+      newList = (updater as any)(inventoryRequests);
+    } else {
+      newList = updater;
+    }
+    try {
+      for (const req of newList) {
+        const existing = inventoryRequests.find(r => r.id === req.id);
+        if (!existing || JSON.stringify(existing) !== JSON.stringify(req)) {
+          await setDoc(doc(db, "inventory_requests", req.id), req);
+        }
+      }
+    } catch (err) {
+      console.error("Error saving inventory request to Firestore:", err);
+    }
+  };
+
+  const handleUpdateCrewLeadsState = async (
+    updater: React.SetStateAction<CrewLead[]>
+  ) => {
+    let newList: CrewLead[] = [];
+    if (typeof updater === "function") {
+      newList = (updater as any)(crewLeads);
+    } else {
+      newList = updater;
+    }
+    try {
+      for (const crew of newList) {
+        const existing = crewLeads.find(c => c.id === crew.id);
+        if (!existing || JSON.stringify(existing) !== JSON.stringify(crew)) {
+          await setDoc(doc(db, "crews", crew.id), crew);
+        }
+      }
+    } catch (err) {
+      console.error("Error saving crew to Firestore:", err);
+    }
+  };
+
   // Simulate incoming chat request
   const handleSimulateInboundInquiry = () => {
     const newInquiry: ChatMessage = {
@@ -789,15 +992,15 @@ export default function App() {
                 crewLeads={crewLeads}
                 onAddAuditLog={addAuditLog}
                 onUpdateHardwareStock={handleUpdateHardwareStock}
-                onUpdateCrewLeads={setCrewLeads}
+                onUpdateCrewLeads={handleUpdateCrewLeadsState}
                 chatMessages={chatMessages}
                 onSendMessage={handleSendMessage}
                 locations={locations}
-                onUpdateLocations={setLocations}
+                onUpdateLocations={handleUpdateLocationsState}
                 inventory={inventory}
-                onUpdateInventory={setInventory}
+                onUpdateInventory={handleUpdateInventoryState}
                 inventoryRequests={inventoryRequests}
-                onUpdateRequests={setInventoryRequests}
+                onUpdateRequests={handleUpdateRequestsState}
                 notifications={notifications}
                 onUpdateNotifications={handleUpdateNotifications}
               />
@@ -823,14 +1026,15 @@ export default function App() {
                 testimonialsList={testimonialsList}
                 onUpdateTestimonials={handleUpdateTestimonials}
                 locations={locations}
-                onUpdateLocations={setLocations}
+                onUpdateLocations={handleUpdateLocationsState}
                 inventory={inventory}
-                onUpdateInventory={setInventory}
+                onUpdateInventory={handleUpdateInventoryState}
                 inventoryRequests={inventoryRequests}
-                onUpdateRequests={setInventoryRequests}
+                onUpdateRequests={handleUpdateRequestsState}
                 notifications={notifications}
                 onUpdateNotifications={handleUpdateNotifications}
                 onUpdateBookings={handleUpdateBookings}
+                onUpdateCrewLeads={handleUpdateCrewLeadsState}
               />
             )}
 

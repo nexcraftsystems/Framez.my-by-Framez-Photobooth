@@ -79,6 +79,7 @@ export interface CrewLead {
   gmailAccount?: string;
   avatarUrl?: string;
   accountRole?: Role; // only developer can set
+  payoutRate?: number; // pay per job
 }
 
 export interface ChatMessage {
